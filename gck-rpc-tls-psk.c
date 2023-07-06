@@ -292,7 +292,7 @@ gck_rpc_init_tls_psk(GckRpcTlsPskState *state, const char *key_filename,
 		SSL_CTX_set_psk_server_callback(state->ssl_ctx, _tls_psk_server_cb);
 
 	/* Disable compression, for security (CRIME Attack). */
-	SSL_CTX_set_options(state->ssl_ctx, SSL_OP_NO_COMPRESSION);
+	SSL_CTX_set_options(state->ssl_ctx, SSL_OP_NO_COMPRESSION | SSL_OP_IGNORE_UNEXPECTED_EOF);
 
 	/* Specify ciphers to use */
 	SSL_CTX_set_cipher_list(state->ssl_ctx, tls_psk_ciphers);
