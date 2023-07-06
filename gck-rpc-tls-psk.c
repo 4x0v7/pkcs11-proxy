@@ -256,7 +256,7 @@ gck_rpc_init_tls_psk(GckRpcTlsPskState *state, const char *key_filename,
 		     const char *identity, enum gck_rpc_tls_psk_caller caller)
 {
 	// Print OpenSSL version
-	printf("OpenSSL Version: %s\n", OpenSSL_version(OPENSSL_VERSION_TEXT));
+	printf("OpenSSL Version: %s\n", OpenSSL_version(OPENSSL_FULL_VERSION_STR ));
 
 	char *tls_psk_ciphers = PKCS11PROXY_TLS_PSK_CIPHERS;
 
