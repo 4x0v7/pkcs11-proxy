@@ -278,6 +278,7 @@ gck_rpc_init_tls_psk(GckRpcTlsPskState *state, const char *key_filename,
 	if (state->ssl_ctx == NULL
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
         || !SSL_CTX_set_min_proto_version(state->ssl_ctx, TLS1_2_VERSION)
+		|| !SSL_CTX_set_max_proto_version(state->ssl_ctx, TLS1_2_VERSION)
 #endif
        ) {
 		gck_rpc_warn("can't initialize SSL_CTX");
