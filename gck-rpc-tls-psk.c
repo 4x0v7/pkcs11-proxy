@@ -255,9 +255,6 @@ int
 gck_rpc_init_tls_psk(GckRpcTlsPskState *state, const char *key_filename,
 		     const char *identity, enum gck_rpc_tls_psk_caller caller)
 {
-	// Print OpenSSL version
-	printf("OpenSSL Version: %s\n", OpenSSL_version(OPENSSL_FULL_VERSION_STRING));
-
 	char *tls_psk_ciphers = PKCS11PROXY_TLS_PSK_CIPHERS;
 
 	if (state->initialized == 1) {
@@ -281,7 +278,7 @@ gck_rpc_init_tls_psk(GckRpcTlsPskState *state, const char *key_filename,
 	if (state->ssl_ctx == NULL
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
         || !SSL_CTX_set_min_proto_version(state->ssl_ctx, TLS1_2_VERSION)
-		|| !SSL_CTX_set_max_proto_version(state->ssl_ctx, TLS1_2_VERSION)
+        || !SSL_CTX_set_max_proto_version(state->ssl_ctx, TLS1_2_VERSION)
 #endif
        ) {
 		gck_rpc_warn("can't initialize SSL_CTX");
