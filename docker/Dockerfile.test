@@ -1,0 +1,49 @@
+# Pull step CLI binary from smallstep image
+FROM smallstep/step-cli:latest AS step-cli
+
+FROM debian:bookworm-slim
+
+# Build + test dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    cmake \
+    pkg-config \
+    libssl-dev \
+    libseccomp-dev \
+    openssl \
+    softhsm2 \
+    opensc \
+    jq \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install step CLI
+COPY --from=step-cli /usr/local/bin/step /usr/local/bin/step
+
+WORKDIR /build/pkcs11-proxy
+COPY . .
+
+# Build pkcs11-proxy
+RUN cmake . && make
+
+# Build test helpers
+RUN gcc -o tests/test-tls-server tests/test-tls-server.c \
+        -I. -Iext -Ipkcs11 \
+        -lssl -lcrypto -Wall -Wextra \
+    && gcc -o tests/test-tls-client tests/test-tls-client.c \
+        -I. -Iext -Ipkcs11 \
+        -lssl -lcrypto -Wall -Wextra
+
+# Generate test PKI using step CLI
+RUN chmod +x tests/generate-test-pki.sh && tests/generate-test-pki.sh
+
+# Prepare SoftHSM for integration tests
+RUN mkdir -p /var/lib/softhsm/tokens \
+    && softhsm2-util --init-token --slot 0 --label cosign \
+       --pin 1234 --so-pin 5678
+
+# Make test runner executable
+RUN chmod +x tests/run-all.sh
+
+ENTRYPOINT ["tests/run-all.sh"]

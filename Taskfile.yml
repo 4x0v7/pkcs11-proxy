@@ -1,0 +1,36 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  TEST_IMAGE: pkcs11-proxy-test
+  PROD_IMAGE: pkcs11-proxy
+
+tasks:
+  default: task -a
+
+  test:
+    desc: Build test image and run all tests
+    cmds:
+      - task: test:build
+      - task: test:run
+
+  test:build:
+    desc: Build test Docker image
+    cmds:
+      - docker build -f docker/Dockerfile.test -t {{.TEST_IMAGE}} .
+
+  test:run:
+    desc: Run tests (image must already be built)
+    cmds:
+      - docker run --rm {{.TEST_IMAGE}}
+
+  test:shell:
+    desc: Interactive shell in test container
+    cmds:
+      - docker run --rm -it {{.TEST_IMAGE}} /bin/bash
+
+  build:
+    desc: Build production server image
+    cmds:
+      - docker build -f docker/Dockerfile.server -t {{.PROD_IMAGE}} .
