@@ -29,35 +29,44 @@ RUN cmake . && make
 
 # Build test helpers (linked with policy module + cJSON)
 RUN gcc -o tests/test-tls-server tests/test-tls-server.c \
-        gck-rpc-tls-policy.c ext/cjson/cJSON.c \
-        -I. -Iext -Ipkcs11 \
+        src/tls/gck-rpc-tls-policy.c ext/cjson/cJSON.c \
+        -Iinclude -I. -Iext -Ipkcs11 \
         -lssl -lcrypto -Wall -Wextra \
     && gcc -o tests/test-tls-client tests/test-tls-client.c \
-        gck-rpc-tls-policy.c ext/cjson/cJSON.c \
-        -I. -Iext -Ipkcs11 \
+        src/tls/gck-rpc-tls-policy.c ext/cjson/cJSON.c \
+        -Iinclude -I. -Iext -Ipkcs11 \
         -lssl -lcrypto -Wall -Wextra \
     && gcc -o tests/test-pkcs11-tool tests/test-pkcs11-tool.c \
-        -I. -Ipkcs11 \
+        -Iinclude -I. -Ipkcs11 \
         -ldl -Wall -Wextra
 
 # Build SECCOMP-enabled daemon for seccomp tests
 RUN gcc -o pkcs11-daemon-seccomp \
-        gck-rpc-daemon-standalone.c gck-rpc-dispatch.c gck-rpc-message.c \
-        gck-rpc-util.c egg-buffer.c gck-rpc-tls.c gck-rpc-tls-policy.c \
+        src/daemon/gck-rpc-daemon-standalone.c src/common/gck-rpc-dispatch.c \
+        src/common/gck-rpc-message.c src/common/gck-rpc-util.c \
+        src/common/egg-buffer.c src/tls/gck-rpc-tls.c \
+        src/tls/gck-rpc-tls-policy.c src/seccomp/syscall-reporter.c \
         ext/cjson/cJSON.c \
-        -DSECCOMP \
-        -I. -Iext -Ipkcs11 \
+        -D_GNU_SOURCE -DSECCOMP -DDEBUG_SECCOMP \
+        -Iinclude -I. -Iext -Ipkcs11 \
         -ldl -lpthread -lssl -lcrypto -lseccomp -Wall -Wextra
 
 # Generate test PKI using step CLI
 RUN chmod +x tests/generate-test-pki.sh && tests/generate-test-pki.sh
 
-# Prepare SoftHSM for integration tests
-RUN mkdir -p /var/lib/softhsm/tokens \
+# Prepare SoftHSM for integration tests — PINs read from files, never on CLI
+RUN mkdir -p /var/lib/softhsm/tokens /etc/softhsm \
+    && printf '1234' > /etc/softhsm/pin \
+    && printf '5678' > /etc/softhsm/so-pin \
+    && chmod 600 /etc/softhsm/pin /etc/softhsm/so-pin \
     && softhsm2-util --init-token --slot 0 --label cosign \
-       --pin 1234 --so-pin 5678
+       --pin "$(cat /etc/softhsm/pin)" --so-pin "$(cat /etc/softhsm/so-pin)"
 
-# Make test runner executable
-RUN chmod +x tests/run-all.sh
+# Make scripts executable
+RUN chmod +x tests/run-all.sh \
+    && chmod +x docker/integration/generate-pki.sh \
+    && chmod +x docker/integration/entrypoint-server.sh \
+    && chmod +x docker/integration/entrypoint-client.sh \
+    && chmod +x docker/integration/run.sh
 
 ENTRYPOINT ["tests/run-all.sh"]

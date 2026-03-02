@@ -29,6 +29,7 @@
 
 #include "gck-rpc-private.h"
 #include "gck-rpc-tls.h"
+#include "gck-rpc-tls-policy.h"
 
 #include <assert.h>
 
@@ -222,6 +223,82 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 
 	debug(("TLS handshake OK: %s %s",
 	       SSL_get_version(state->ssl), SSL_get_cipher_name(state->ssl)));
+
+	/* OID policy verification (optional — skipped when env vars are unset) */
+	if (state->type == GCK_RPC_TLS_SERVER) {
+		const char *policy_repo   = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
+		const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
+
+		if (policy_repo && policy_repo[0] &&
+		    policy_keyset && policy_keyset[0]) {
+			X509 *peer = SSL_get0_peer_certificate(state->ssl);
+			char *json;
+			int json_len;
+			PolicyResult pr;
+
+			if (!peer) {
+				warning(("OID policy: no client certificate"));
+				return 0;
+			}
+
+			json = policy_extract_json(peer, &json_len);
+			if (!json) {
+				warning(("OID policy: no policy extension in client cert"));
+				return 0;
+			}
+
+			pr = policy_validate_client(json, json_len,
+						    policy_repo, policy_keyset);
+			free(json);
+
+			if (pr != POLICY_OK) {
+				warning(("OID policy rejected client: %s",
+					 policy_result_str(pr)));
+				return 0;
+			}
+
+			debug(("OID policy: client accepted"));
+		}
+	} else {
+		/* Client-side: validate server cert OID policy */
+		const char *policy_service   = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
+		const char *policy_namespace = getenv("PKCS11_PROXY_TLS_POLICY_NAMESPACE");
+		const char *policy_keyset    = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
+
+		if (policy_service && policy_service[0] &&
+		    policy_namespace && policy_namespace[0] &&
+		    policy_keyset && policy_keyset[0]) {
+			X509 *peer = SSL_get0_peer_certificate(state->ssl);
+			char *json;
+			int json_len;
+			PolicyResult pr;
+
+			if (!peer) {
+				warning(("OID policy: no server certificate"));
+				return 0;
+			}
+
+			json = policy_extract_json(peer, &json_len);
+			if (!json) {
+				warning(("OID policy: no policy extension in server cert"));
+				return 0;
+			}
+
+			pr = policy_validate_server(json, json_len,
+						    policy_service,
+						    policy_namespace,
+						    policy_keyset);
+			free(json);
+
+			if (pr != POLICY_OK) {
+				warning(("OID policy rejected server: %s",
+					 policy_result_str(pr)));
+				return 0;
+			}
+
+			debug(("OID policy: server accepted"));
+		}
+	}
 
 	return 1;
 }

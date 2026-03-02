@@ -592,6 +592,8 @@ static CK_RV proto_read_space_string(CallState * cs, CK_UTF8CHAR_PTR * val, CK_U
 	const unsigned char *data;
 	size_t n_data;
 
+	(void)length;
+
 	assert(cs);
 	assert(val);
 

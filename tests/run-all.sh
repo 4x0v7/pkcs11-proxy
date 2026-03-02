@@ -631,10 +631,10 @@ test_data_integrity() {
             "${PKI_DIR}/root-ca.crt" \
             "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
         local rc=$?
-        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "TOKEN_LABEL=cosign"; then
-            pass "T40: PKCS#11 round-trip over mTLS"
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T40: PKCS#11 crypto round-trip over mTLS"
         else
-            fail "T40: PKCS#11 round-trip over mTLS" "exit=${rc} output=${PKCS11_OUTPUT}"
+            fail "T40: PKCS#11 crypto round-trip over mTLS" "exit=${rc} output=${PKCS11_OUTPUT}"
         fi
     fi
     stop_daemon
@@ -719,10 +719,10 @@ test_seccomp() {
             "${PKI_DIR}/root-ca.crt" \
             "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
         local rc=$?
-        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "TOKEN_LABEL=cosign"; then
-            pass "T50: PKCS#11 round-trip with SECCOMP"
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T50: PKCS#11 crypto round-trip with SECCOMP"
         else
-            fail "T50: PKCS#11 round-trip with SECCOMP" "exit=${rc} output=${PKCS11_OUTPUT}"
+            fail "T50: PKCS#11 crypto round-trip with SECCOMP" "exit=${rc} output=${PKCS11_OUTPUT}"
         fi
     fi
     stop_daemon
@@ -748,6 +748,126 @@ test_seccomp() {
             pass "T51: Multiple PKCS#11 connections with SECCOMP"
         else
             fail "T51: Multiple PKCS#11 connections with SECCOMP" "failed on iteration ${i}"
+        fi
+    fi
+    stop_daemon
+}
+
+# ═══════════════════════════════════════════
+# OID POLICY via DAEMON (T60-T63)
+# ═══════════════════════════════════════════
+
+# Start daemon with OID policy enforcement enabled.
+# Usage: start_daemon_with_policy <server_cert> <server_key> <ca_cert> <policy_repo> <policy_keyset>
+start_daemon_with_policy() {
+    local cert="$1"
+    local key="$2"
+    local ca="$3"
+    local policy_repo="$4"
+    local policy_keyset="$5"
+
+    local port
+    port=$(perl -MSocket -e 'socket(S,AF_INET,SOCK_STREAM,0); bind(S,sockaddr_in(0,INADDR_ANY)); ($p)=sockaddr_in(getsockname(S)); print $p; close S')
+
+    PKCS11_PROXY_TLS_CERT="${cert}" \
+    PKCS11_PROXY_TLS_KEY="${key}" \
+    PKCS11_PROXY_TLS_CA="${ca}" \
+    PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
+    PKCS11_PROXY_TLS_POLICY_REPO="${policy_repo}" \
+    PKCS11_PROXY_TLS_POLICY_KEYSET="${policy_keyset}" \
+    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" &
+    DAEMON_PID=$!
+    DAEMON_PORT="${port}"
+
+    sleep 0.5
+
+    if ! kill -0 "${DAEMON_PID}" 2>/dev/null; then
+        DAEMON_PID=""
+        DAEMON_PORT=""
+        return 1
+    fi
+    return 0
+}
+
+test_oid_policy_daemon() {
+    log_header "OID Policy via Daemon"
+
+    # T60: Valid OID client cert → daemon accepts PKCS#11 operation
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T60" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T60: Valid OID client → daemon accepts (crypto)"
+        else
+            fail "T60: Valid OID client → daemon accepts (crypto)" "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
+
+    # T61: Client cert with no OID → daemon rejects
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T61" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-no-oid.crt" "${PKI_DIR}/client-no-oid.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T61: No-OID client → daemon rejects"
+        else
+            fail "T61: No-OID client → daemon rejects" "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T62: Client cert with wrong repo → daemon rejects
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T62" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-wrong-repo.crt" "${PKI_DIR}/client-wrong-repo.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T62: Wrong-repo client → daemon rejects"
+        else
+            fail "T62: Wrong-repo client → daemon rejects" "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T63: Client cert with wrong keyset → daemon rejects
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T63" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-wrong-keyset.crt" "${PKI_DIR}/client-wrong-keyset.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T63: Wrong-keyset client → daemon rejects"
+        else
+            fail "T63: Wrong-keyset client → daemon rejects" "expected failure but got rc=0"
         fi
     fi
     stop_daemon
@@ -780,6 +900,7 @@ test_oid_client_side
 test_hostname
 test_data_integrity
 test_seccomp
+test_oid_policy_daemon
 
 # ─── Summary ───
 echo ""

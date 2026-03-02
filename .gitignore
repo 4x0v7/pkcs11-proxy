@@ -10,4 +10,4 @@ res/.directory
 Makefile
 Trolltech.conf
 obj-i686-linux-gnu
-syscall-names.h
+include/syscall-names.h

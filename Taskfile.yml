@@ -30,6 +30,45 @@ tasks:
     cmds:
       - docker run --rm -it {{.TEST_IMAGE}} /bin/bash
 
+  test:integration:
+    desc: Run Docker Compose integration tests (multi-container)
+    cmds:
+      - task: test:build
+      - bash docker/integration/run.sh
+
+  dagger:test:
+    desc: Run unit tests via Dagger
+    cmds:
+      - dagger call -m .dagger test --src=.
+
+  dagger:integration:
+    desc: Run integration tests via Dagger
+    cmds:
+      - dagger call -m .dagger integration-test --src=.
+
+  lint:
+    desc: Run all linters (ruff fmt + ruff check + ty)
+    cmds:
+      - task: lint:fmt
+      - task: lint:check
+      - task: lint:ty
+
+  lint:fmt:
+    desc: Format Python code with ruff
+    cmds:
+      - ruff format .dagger/src/pkcs_11_proxy/
+
+  lint:check:
+    desc: Lint Python code with ruff
+    cmds:
+      - ruff check --fix .dagger/src/pkcs_11_proxy/
+
+  lint:ty:
+    desc: Type-check Python code with ty
+    dir: .dagger
+    cmds:
+      - ty check src/pkcs_11_proxy/
+
   build:
     desc: Build production server image
     cmds:

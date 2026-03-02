@@ -250,6 +250,7 @@ static int usage(void)
 
 void termination_handler (int signum)
 {
+	(void)signum;
 	is_running = 0;
 }
 

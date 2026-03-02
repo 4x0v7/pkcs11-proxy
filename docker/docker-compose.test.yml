@@ -1,0 +1,49 @@
+# Docker Compose integration test for pkcs11-proxy.
+#
+# Three services:
+#   pki    - Generates ephemeral CA + server/client certs into a shared volume
+#   server - Runs pkcs11-daemon with SoftHSM, TLS 1.3, and OID policy enforcement
+#   client - Runs PKCS#11 operations through the proxy library against the server
+#
+# Usage:
+#   docker compose -f docker/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from client
+
+services:
+  pki:
+    image: pkcs11-proxy-test
+    entrypoint: ["bash", "/build/pkcs11-proxy/docker/integration/generate-pki.sh"]
+    volumes:
+      - pki:/pki
+
+  server:
+    image: pkcs11-proxy-test
+    entrypoint: ["bash", "/build/pkcs11-proxy/docker/integration/entrypoint-server.sh"]
+    security_opt:
+      - seccomp=unconfined
+    stop_grace_period: 2s
+    depends_on:
+      pki:
+        condition: service_completed_successfully
+    environment:
+      PKCS11_PROXY_TLS_CERT: /pki/server.crt
+      PKCS11_PROXY_TLS_KEY: /pki/server.key
+      PKCS11_PROXY_TLS_CA: /pki/ca.crt
+      PKCS11_PROXY_TLS_REQUIRE_MTLS: "true"
+      PKCS11_PROXY_TLS_POLICY_REPO: "org/repo"
+      PKCS11_PROXY_TLS_POLICY_KEYSET: "cosign-v1"
+    volumes:
+      - pki:/pki:ro
+
+  client:
+    image: pkcs11-proxy-test
+    entrypoint: ["bash", "/build/pkcs11-proxy/docker/integration/entrypoint-client.sh"]
+    depends_on:
+      pki:
+        condition: service_completed_successfully
+      server:
+        condition: service_started
+    volumes:
+      - pki:/pki:ro
+
+volumes:
+  pki:

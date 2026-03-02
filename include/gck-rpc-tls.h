@@ -52,6 +52,15 @@ typedef struct {
  *   PKCS11_PROXY_TLS_CA          - CA bundle for peer verification
  *   PKCS11_PROXY_TLS_SERVER_NAME - expected server hostname (client only)
  *   PKCS11_PROXY_TLS_REQUIRE_MTLS - "true" to require client certs (server, default true)
+ *
+ * OID policy verification (optional — skipped when env vars are unset):
+ *   Server-side (validates client cert):
+ *     PKCS11_PROXY_TLS_POLICY_REPO   - expected GitHub repo (e.g. "org/repo")
+ *     PKCS11_PROXY_TLS_POLICY_KEYSET - expected keyset (e.g. "cosign-v1")
+ *   Client-side (validates server cert):
+ *     PKCS11_PROXY_TLS_POLICY_SERVICE   - expected service name
+ *     PKCS11_PROXY_TLS_POLICY_NAMESPACE - expected namespace
+ *     PKCS11_PROXY_TLS_POLICY_KEYSET    - expected keyset
  */
 
 /* Initialize TLS context. Reads env vars for cert/key/CA paths.

@@ -8,8 +8,25 @@ project (pkcs11 C)
 
 set(VERSION "1.0.0")
 
-set(PKCS11_PROXY_SRCS gck-rpc-module.c gck-rpc-message.c gck-rpc-util.c egg-buffer.c gck-rpc-tls.c gck-rpc-tls-policy.c ext/cjson/cJSON.c)
-set(PKCS11_DAEMON_SRCS egg-buffer.c gck-rpc-daemon-standalone.c gck-rpc-dispatch.c gck-rpc-message.c gck-rpc-util.c syscall-reporter.c syscall-names.h gck-rpc-tls.c gck-rpc-tls-policy.c ext/cjson/cJSON.c)
+set(PKCS11_PROXY_SRCS
+    src/proxy/gck-rpc-module.c
+    src/common/gck-rpc-message.c
+    src/common/gck-rpc-util.c
+    src/common/egg-buffer.c
+    src/tls/gck-rpc-tls.c
+    src/tls/gck-rpc-tls-policy.c
+    ext/cjson/cJSON.c)
+
+set(PKCS11_DAEMON_SRCS
+    src/daemon/gck-rpc-daemon-standalone.c
+    src/common/gck-rpc-dispatch.c
+    src/common/gck-rpc-message.c
+    src/common/gck-rpc-util.c
+    src/common/egg-buffer.c
+    src/seccomp/syscall-reporter.c
+    src/tls/gck-rpc-tls.c
+    src/tls/gck-rpc-tls-policy.c
+    ext/cjson/cJSON.c)
 
 # Uncomment for a debug build
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -ggdb")
@@ -32,6 +49,10 @@ else()
 endif()
 
 add_definitions(-Wall)
+
+# Project include paths — resolves all #include "foo.h" from the new layout
+include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR})
 add_library(pkcs11-proxy SHARED ${PKCS11_PROXY_SRCS})
 
 # Disable console when building Win32 binary in release mode
@@ -67,9 +88,13 @@ install_targets (/lib pkcs11-proxy)
 install_targets (/bin pkcs11-daemon)
 
 add_custom_command(
-   OUTPUT syscall-names.h
+   OUTPUT ${CMAKE_SOURCE_DIR}/include/syscall-names.h
    COMMAND ${CMAKE_SOURCE_DIR}/mksyscalls.sh
    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# Ensure generated header is built before the daemon
+set_source_files_properties(${CMAKE_SOURCE_DIR}/include/syscall-names.h PROPERTIES GENERATED TRUE)
+target_sources(pkcs11-daemon PRIVATE ${CMAKE_SOURCE_DIR}/include/syscall-names.h)
 
 set(CPACK_PACKAGE_VERSION ${VERSION})
 set(CPACK_GENERATOR "RPM")

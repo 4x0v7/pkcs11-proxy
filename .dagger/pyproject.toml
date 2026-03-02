@@ -1,0 +1,15 @@
+[project]
+name = "pkcs-11-proxy"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["dagger-io"]
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[tool.ty.rules]
+unresolved-import = "ignore"  # dagger SDK only exists inside Dagger runtime
