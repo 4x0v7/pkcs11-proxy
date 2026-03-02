@@ -26,7 +26,7 @@
 #include "pkcs11/pkcs11.h"
 
 #include "gck-rpc-layer.h"
-#include "gck-rpc-tls-psk.h"
+#include "gck-rpc-tls.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -56,7 +56,7 @@
 #endif /* SECCOMP */
 
 
-static int install_syscall_filter(const int sock, const char *tls_psk_keyfile, const char *path)
+static int install_syscall_filter(const int sock, const char *path)
 {
 #ifdef SECCOMP
 	int rc = -1;
@@ -210,12 +210,12 @@ int main(int argc, char *argv[])
 	CK_C_GetFunctionList func_get_list;
 	CK_FUNCTION_LIST_PTR funcs;
 	void *module;
-	const char *path, *tls_psk_keyfile;
+	const char *path;
 	fd_set read_fds;
 	int sock, ret, mode;
 	CK_RV rv;
 	CK_C_INITIALIZE_ARGS init_args;
-	GckRpcTlsPskState *tls;
+	GckRpcTlsState *tls;
 
 	/* The module to load is the argument */
 	if (argc != 2 && argc != 3)
@@ -270,22 +270,15 @@ int main(int argc, char *argv[])
 
 	/* Initialize TLS, if appropriate */
 	tls = NULL;
-	tls_psk_keyfile = NULL;
 	if (! strncmp("tls://", path, 6)) {
-		tls_psk_keyfile = getenv("PKCS11_PROXY_TLS_PSK_FILE");
-		if (! tls_psk_keyfile || ! tls_psk_keyfile[0]) {
-			fprintf(stderr, "key file must be specified for tls:// socket.\n");
-			exit(1);
-		}
-
-		tls = calloc(1, sizeof(GckRpcTlsPskState));
+		tls = calloc(1, sizeof(GckRpcTlsState));
 		if (tls == NULL) {
-			fprintf(stderr, "can't allocate memory for TLS-PSK");
+			fprintf(stderr, "can't allocate memory for TLS\n");
 			exit(1);
 		}
 
-		if (! gck_rpc_init_tls_psk(tls, tls_psk_keyfile, NULL, GCK_RPC_TLS_PSK_SERVER)) {
-			fprintf(stderr, "TLS-PSK initialization failed");
+		if (! gck_rpc_init_tls(tls, GCK_RPC_TLS_SERVER)) {
+			fprintf(stderr, "TLS initialization failed\n");
 			exit(1);
 		}
 	}
@@ -312,7 +305,7 @@ int main(int argc, char *argv[])
 	 * we expect to call from here on. Anything not whitelisted will cause the
 	 * process to terminate.
 	 */
-        if (install_syscall_filter(sock, tls_psk_keyfile, path))
+        if (install_syscall_filter(sock, path))
         	return 1;
 
         if (mode == GCP_RPC_DAEMON_MODE_INETD) {

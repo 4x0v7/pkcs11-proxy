@@ -6,10 +6,7 @@
 # define PKCS11PROXY_LISTEN_BACKLOG 128
 # define PKCS11PROXY_MAX_SESSION_COUNT 1
 
-// This seems to be the strongest cipher with ECDHE and PSK
-// DHE ciphers require a DH parameter file and extra setup on the server side
-// TLS 1.3 changes how PSK is implemented, so we'll stick with TLS 1.2 for now
-# define PKCS11PROXY_TLS_PSK_CIPHERS "ECDHE-PSK-CHACHA20-POLY1305";
+// TLS 1.3 ciphersuites are configured in gck-rpc-tls.c
 
 //# define DEBUG_SECCOMP
 //# define SECCOMP

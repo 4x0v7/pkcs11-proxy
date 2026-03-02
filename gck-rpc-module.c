@@ -25,7 +25,7 @@
 
 #include "gck-rpc-layer.h"
 #include "gck-rpc-private.h"
-#include "gck-rpc-tls-psk.h"
+#include "gck-rpc-tls.h"
 
 #include "pkcs11/pkcs11.h"
 
@@ -68,8 +68,6 @@ static uint64_t pkcs11_app_id = 0;
 
 /* The socket to connect to */
 static char pkcs11_socket_path[MAXPATHLEN] = { 0, };
-/* The TLS-PSK keyfile name */
-static char tls_psk_key_filename[MAXPATHLEN] = { 0, };
 
 /* The error used by us when parsing of rpc message fails */
 #define PARSE_ERROR   CKR_DEVICE_ERROR
@@ -116,8 +114,7 @@ static void parse_argument(char *arg)
 		snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path), "%s",
 			 value);
 	else if (strcmp(arg, "tls_psk_file") == 0)
-		snprintf(tls_psk_key_filename, sizeof(tls_psk_key_filename), "%s",
-			 value);
+		warning(("tls_psk_file is deprecated, use PKCS11_PROXY_TLS_* env vars"));
 	else
 		warning(("unrecognized argument: %s", arg));
 }
@@ -206,7 +203,7 @@ typedef struct _CallState {
 	GckRpcMessage *req;	/* The current request */
 	GckRpcMessage *resp;	/* The current response */
 	int call_status;
-	GckRpcTlsPskState *tls;
+	GckRpcTlsState *tls;
 	struct _CallState *next;	/* For pooling of completed sockets */
 } CallState;
 
@@ -439,14 +436,14 @@ static CK_RV call_connect(CallState * cs)
 		free(host);
 
 		if (! strncmp("tls://", pkcs11_socket_path, 6)) {
-			cs->tls = calloc(1, sizeof(GckRpcTlsPskState));
+			cs->tls = calloc(1, sizeof(GckRpcTlsState));
 			if (cs->tls == NULL) {
-				warning(("can't allocate memory for TLS-PSK"));
+				warning(("can't allocate memory for TLS"));
 				return CKR_HOST_MEMORY;
 			}
 
-			if (! gck_rpc_init_tls_psk(cs->tls, tls_psk_key_filename, NULL, GCK_RPC_TLS_PSK_CLIENT)) {
-				warning(("TLS-PSK initialization failed"));
+			if (! gck_rpc_init_tls(cs->tls, GCK_RPC_TLS_CLIENT)) {
+				warning(("TLS initialization failed"));
 				return CKR_DEVICE_ERROR;
 			}
 
@@ -1370,19 +1367,12 @@ static CK_RV rpc_C_Initialize(CK_VOID_PTR init_args)
 		}
 	}
 
-	/* If socket path indicates TLS, make sure tls_psk_key_filename is populated. */
+	/* If socket path indicates TLS, verify required env vars are set. */
 	if (! strncmp("tls://", pkcs11_socket_path, 6)) {
-		if (! tls_psk_key_filename[0]) {
-			path = getenv("PKCS11_PROXY_TLS_PSK_FILE");
-			if (path && path[0]) {
-				snprintf(tls_psk_key_filename, sizeof(tls_psk_key_filename),
-					 "%s", path);
-			}
-		}
-
-		if (! tls_psk_key_filename[0]) {
-			warning(("can't handle tls:// path without a tls-psk file"));
-			ret =  CKR_FUNCTION_NOT_SUPPORTED;
+		const char *ca = getenv("PKCS11_PROXY_TLS_CA");
+		if (!ca || !ca[0]) {
+			warning(("PKCS11_PROXY_TLS_CA is required for tls:// connections"));
+			ret = CKR_FUNCTION_NOT_SUPPORTED;
 			goto done;
 		}
 	}

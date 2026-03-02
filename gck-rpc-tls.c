@@ -1,0 +1,299 @@
+/* -*- Mode: C; indent-tabs-mode: t; c-basic-offset: 8; tab-width: 8 -*- */
+/* gck-rpc-tls.c - TLS 1.3 mTLS with certificate-based authentication
+
+   Copyright (C) 2013, NORDUnet A/S
+   Copyright (C) 2025, SIGNEDGIT
+
+   pkcs11-proxy is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License as
+   published by the Free Software Foundation; either version 2 of the
+   License, or (at your option) any later version.
+
+   pkcs11-proxy is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with the Gnome Library; see the file COPYING.LIB.  If not,
+   write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.
+
+   Original TLS-PSK author: Fredrik Thulin <fredrik@thulin.net>
+*/
+
+#include <string.h>
+#include <stdlib.h>
+
+#include "config.h"
+
+#include "gck-rpc-private.h"
+#include "gck-rpc-tls.h"
+
+#include <assert.h>
+
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+
+/* -----------------------------------------------------------------------------
+ * LOGGING and DEBUGGING
+ */
+#ifndef DEBUG_OUTPUT
+#define DEBUG_OUTPUT 0
+#endif
+#if DEBUG_OUTPUT
+#define debug(x) gck_rpc_debug x
+#else
+#define debug(x)
+#endif
+#define warning(x) gck_rpc_warn x
+
+
+/* -----------------------------------------------------------------------------
+ * TLS 1.3 CIPHERSUITES
+ */
+#define PKCS11PROXY_TLS13_CIPHERSUITES \
+	"TLS_AES_256_GCM_SHA384:" \
+	"TLS_CHACHA20_POLY1305_SHA256:" \
+	"TLS_AES_128_GCM_SHA256"
+
+
+/* -----------------------------------------------------------------------------
+ * HELPER: get env var with optional default
+ */
+static const char *
+_getenv_or(const char *name, const char *def)
+{
+	const char *v = getenv(name);
+	return (v && v[0]) ? v : def;
+}
+
+
+/* -----------------------------------------------------------------------------
+ * TLS 1.3 certificate-based mTLS
+ */
+
+/* Initialize OpenSSL and create an SSL CTX. Should be called just once.
+ *
+ * Reads configuration from environment variables:
+ *   PKCS11_PROXY_TLS_CERT        - PEM certificate chain
+ *   PKCS11_PROXY_TLS_KEY         - PEM private key
+ *   PKCS11_PROXY_TLS_CA          - CA bundle for peer verification
+ *   PKCS11_PROXY_TLS_SERVER_NAME - expected server hostname (client only)
+ *   PKCS11_PROXY_TLS_REQUIRE_MTLS - "true" to require client certs (server, default true)
+ *
+ * Returns 0 on failure and 1 on success.
+ */
+int
+gck_rpc_init_tls(GckRpcTlsState *state, enum gck_rpc_tls_caller caller)
+{
+	const char *cert_file, *key_file, *ca_file, *require_mtls_str;
+	int require_mtls;
+
+	if (state->initialized == 1) {
+		warning(("TLS state already initialized"));
+		return 0;
+	}
+
+	assert(caller == GCK_RPC_TLS_CLIENT || caller == GCK_RPC_TLS_SERVER);
+
+	cert_file = getenv("PKCS11_PROXY_TLS_CERT");
+	key_file = getenv("PKCS11_PROXY_TLS_KEY");
+	ca_file = getenv("PKCS11_PROXY_TLS_CA");
+	require_mtls_str = _getenv_or("PKCS11_PROXY_TLS_REQUIRE_MTLS", "true");
+	require_mtls = (strcmp(require_mtls_str, "true") == 0);
+
+	/* Validate required env vars */
+	if (!ca_file || !ca_file[0]) {
+		gck_rpc_warn("PKCS11_PROXY_TLS_CA is required");
+		return 0;
+	}
+
+	if (caller == GCK_RPC_TLS_SERVER) {
+		if (!cert_file || !cert_file[0] || !key_file || !key_file[0]) {
+			gck_rpc_warn("PKCS11_PROXY_TLS_CERT and PKCS11_PROXY_TLS_KEY are required for server");
+			return 0;
+		}
+	}
+
+	/* Create TLS 1.3 context */
+	state->ssl_ctx = SSL_CTX_new(TLS_method());
+
+	if (state->ssl_ctx == NULL
+	    || !SSL_CTX_set_min_proto_version(state->ssl_ctx, TLS1_3_VERSION)
+	    || !SSL_CTX_set_max_proto_version(state->ssl_ctx, TLS1_3_VERSION)) {
+		gck_rpc_warn("can't initialize SSL_CTX for TLS 1.3");
+		return 0;
+	}
+
+	/* Set TLS 1.3 ciphersuites */
+	SSL_CTX_set_ciphersuites(state->ssl_ctx, PKCS11PROXY_TLS13_CIPHERSUITES);
+
+	/* Disable compression, for security (CRIME Attack). */
+	SSL_CTX_set_options(state->ssl_ctx, SSL_OP_NO_COMPRESSION | SSL_OP_IGNORE_UNEXPECTED_EOF);
+
+	/* Load CA bundle for peer verification */
+	if (SSL_CTX_load_verify_locations(state->ssl_ctx, ca_file, NULL) != 1) {
+		gck_rpc_warn("can't load CA bundle: %s", ca_file);
+		return 0;
+	}
+
+	/* Load certificate and key (always for server, optional for client mTLS) */
+	if (cert_file && cert_file[0] && key_file && key_file[0]) {
+		if (SSL_CTX_use_certificate_chain_file(state->ssl_ctx, cert_file) != 1) {
+			gck_rpc_warn("can't load certificate: %s", cert_file);
+			return 0;
+		}
+		if (SSL_CTX_use_PrivateKey_file(state->ssl_ctx, key_file, SSL_FILETYPE_PEM) != 1) {
+			gck_rpc_warn("can't load private key: %s", key_file);
+			return 0;
+		}
+		if (SSL_CTX_check_private_key(state->ssl_ctx) != 1) {
+			gck_rpc_warn("certificate/key mismatch");
+			return 0;
+		}
+		debug(("Loaded cert=%s key=%s", cert_file, key_file));
+	}
+
+	/* Configure peer verification */
+	if (caller == GCK_RPC_TLS_SERVER && require_mtls) {
+		SSL_CTX_set_verify(state->ssl_ctx,
+			SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+		debug(("Server: mTLS required"));
+	} else if (caller == GCK_RPC_TLS_CLIENT) {
+		SSL_CTX_set_verify(state->ssl_ctx, SSL_VERIFY_PEER, NULL);
+		debug(("Client: server verification enabled"));
+	}
+
+	state->type = caller;
+	state->initialized = 1;
+
+	debug(("Initialized TLS 1.3 %s", caller == GCK_RPC_TLS_CLIENT ? "client" : "server"));
+
+	return 1;
+}
+
+/* Set up SSL for a new socket. Call this after accept() or connect().
+ *
+ * Returns 1 on success and 0 on failure.
+ */
+int
+gck_rpc_start_tls(GckRpcTlsState *state, int sock)
+{
+	int res;
+	char buf[256];
+	const char *server_name;
+
+	state->ssl = SSL_new(state->ssl_ctx);
+	if (! state->ssl) {
+		warning(("can't initialize SSL"));
+		return 0;
+	}
+
+	state->bio = BIO_new_socket(sock, BIO_NOCLOSE);
+	if (! state->bio) {
+		warning(("can't initialize SSL BIO"));
+		return 0;
+	}
+
+	SSL_set_bio(state->ssl, state->bio, state->bio);
+
+	if (state->type == GCK_RPC_TLS_CLIENT) {
+		/* Set hostname verification for client */
+		server_name = getenv("PKCS11_PROXY_TLS_SERVER_NAME");
+		if (server_name && server_name[0]) {
+			SSL_set_tlsext_host_name(state->ssl, server_name);
+			SSL_set1_host(state->ssl, server_name);
+			debug(("Client: hostname verification for '%s'", server_name));
+		}
+
+		res = SSL_connect(state->ssl);
+	} else {
+		res = SSL_accept(state->ssl);
+	}
+
+	if (res != 1) {
+		ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+		warning(("can't start TLS : %i/%i (%s perhaps)",
+			 res, SSL_get_error(state->ssl, res), strerror(errno)));
+		warning(("SSL ERR: %s", buf));
+		return 0;
+	}
+
+	debug(("TLS handshake OK: %s %s",
+	       SSL_get_version(state->ssl), SSL_get_cipher_name(state->ssl)));
+
+	return 1;
+}
+
+/* Un-initialize everything SSL related. Call this on application shut down.
+ */
+void
+gck_rpc_close_tls(GckRpcTlsState *state)
+{
+	if (state->ssl) {
+		SSL_shutdown(state->ssl);
+		SSL_free(state->ssl);
+		state->ssl = NULL;
+		state->bio = NULL; /* freed by SSL_free */
+	}
+
+	if (state->ssl_ctx) {
+		SSL_CTX_free(state->ssl_ctx);
+		state->ssl_ctx = NULL;
+	}
+}
+
+/* Send data using SSL.
+ *
+ * Returns the number of bytes written.
+ */
+int
+gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len)
+{
+	int bytes, error;
+	char buf[256];
+
+	assert(state);
+	assert(data);
+	assert(len > 0);
+
+	bytes = SSL_write(state->ssl, data, len);
+
+	if (bytes <= 0) {
+		while ((error = ERR_get_error())) {
+			ERR_error_string_n(error, buf, sizeof(buf));
+			warning(("SSL_write error: %s", buf));
+		}
+		return 0;
+	}
+
+	return bytes;
+}
+
+/* Read data using SSL.
+ *
+ * Returns the number of bytes read.
+ */
+int
+gck_rpc_tls_read_all(GckRpcTlsState *state, void *data, unsigned int len)
+{
+	int bytes, error;
+	char buf[256];
+
+	assert(state);
+	assert(data);
+	assert(len > 0);
+
+	bytes = SSL_read(state->ssl, data, len);
+
+	if (bytes <= 0) {
+		while ((error = ERR_get_error())) {
+			ERR_error_string_n(error, buf, sizeof(buf));
+			warning(("SSL_read error: %s", buf));
+		}
+		return 0;
+	}
+
+	return bytes;
+}

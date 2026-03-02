@@ -25,7 +25,7 @@
 
 #include "gck-rpc-layer.h"
 #include "gck-rpc-private.h"
-#include "gck-rpc-tls-psk.h"
+#include "gck-rpc-tls.h"
 
 #include "pkcs11/pkcs11.h"
 #include "pkcs11/pkcs11g.h"
@@ -90,7 +90,7 @@ typedef struct _CallState {
 	 * upper limit and reduce typical memory use.
 	 */
 	SessionState sessions[PKCS11PROXY_MAX_SESSION_COUNT];
-	GckRpcTlsPskState *tls;
+	GckRpcTlsState *tls;
 } CallState;
 
 typedef struct _DispatchState {
@@ -2332,7 +2332,7 @@ static int pkcs11_socket = -1;
 /* The unix socket path, that we listen on */
 static char pkcs11_socket_path[MAXPATHLEN] = { 0, };
 
-void gck_rpc_layer_accept(GckRpcTlsPskState *tls)
+void gck_rpc_layer_accept(GckRpcTlsState *tls)
 {
 	struct sockaddr_storage addr;
 	DispatchState *ds, **here;
@@ -2686,12 +2686,9 @@ static int _install_dispatch_syscall_filter(int use_tls)
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
 
 	/*
-	 * TLS-PSK
+	 * TLS cert-based — no per-connection file I/O needed
+	 * (certs loaded at init, before seccomp).
 	 */
-	if (use_tls)
-		/* Allow open() of the TLS-PSK keyfile. */
-		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
-				 SCMP_A1(SCMP_CMP_EQ, O_RDONLY | O_CLOEXEC));
 
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
 
