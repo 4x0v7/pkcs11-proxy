@@ -2669,12 +2669,12 @@ static int _install_dispatch_syscall_filter(int use_tls)
 	 * the syscall-reporter to figure out the rest
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
-#ifdef DEBUG_SECCOMP
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
-# ifdef __NR_sigreturn
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sigreturn), 0);
-# endif
-#endif /* DEBUG_SECCOMP */
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getpid), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(gettid), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0);
 
@@ -2684,29 +2684,59 @@ static int _install_dispatch_syscall_filter(int use_tls)
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(pselect6), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(shutdown), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(setsockopt), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getsockname), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getpeername), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(ioctl), 0);
 
 	/*
 	 * TLS cert-based — no per-connection file I/O needed
 	 * (certs loaded at init, before seccomp).
+	 * TLS 1.3 needs getrandom() for per-connection key material.
 	 */
+	if (use_tls)
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getrandom), 0);
 
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
 
 	/*
-	 * pthreads?
+	 * pthreads and memory management.
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 1,
 			 SCMP_A2(SCMP_CMP_EQ, PROT_READ|PROT_WRITE));
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(set_tid_address), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sigaltstack), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sysinfo), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(prlimit64), 0);
+#ifdef __NR_rseq
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rseq), 0);
+#endif
 
 	/*
-	 * SoftHSM 1.3.0
+	 * getnameinfo with NI_NUMERICHOST may still probe NSS.
+	 */
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(socket), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(connect), 0);
+
+	/*
+	 * SoftHSM 2.x
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getcwd), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(stat), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(open), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(openat), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(newfstatat), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(lseek), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(access), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(fsync), 0);
@@ -2714,6 +2744,8 @@ static int _install_dispatch_syscall_filter(int use_tls)
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getdents64), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(pread64), 0);
 
 	rc = seccomp_load(ctx);
 	if (rc < 0)

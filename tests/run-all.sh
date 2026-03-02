@@ -10,6 +10,12 @@ BUILD_DIR="${SCRIPT_DIR}/.."
 
 TEST_SERVER="${SCRIPT_DIR}/test-tls-server"
 TEST_CLIENT="${SCRIPT_DIR}/test-tls-client"
+TEST_PKCS11_TOOL="${SCRIPT_DIR}/test-pkcs11-tool"
+PKCS11_DAEMON="${BUILD_DIR}/pkcs11-daemon"
+PKCS11_PROXY_LIB="${BUILD_DIR}/libpkcs11-proxy.so"
+SOFTHSM_MODULE="/usr/lib/softhsm/libsofthsm2.so"
+
+DAEMON_PID=""
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -551,26 +557,200 @@ test_hostname() {
 # DATA INTEGRITY (T40-T41)
 # ═══════════════════════════════════════════
 
+# Start pkcs11-daemon with TLS, listening on a random port.
+# Usage: start_daemon <server_cert> <server_key> <ca_cert>
+# Sets: DAEMON_PID, DAEMON_PORT
+start_daemon() {
+    local cert="$1"
+    local key="$2"
+    local ca="$3"
+
+    # Find a free port
+    local port
+    port=$(perl -MSocket -e 'socket(S,AF_INET,SOCK_STREAM,0); bind(S,sockaddr_in(0,INADDR_ANY)); ($p)=sockaddr_in(getsockname(S)); print $p; close S')
+
+    PKCS11_PROXY_TLS_CERT="${cert}" \
+    PKCS11_PROXY_TLS_KEY="${key}" \
+    PKCS11_PROXY_TLS_CA="${ca}" \
+    PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
+    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" &
+    DAEMON_PID=$!
+    DAEMON_PORT="${port}"
+
+    # Give daemon time to start listening
+    sleep 0.5
+
+    if ! kill -0 "${DAEMON_PID}" 2>/dev/null; then
+        DAEMON_PID=""
+        DAEMON_PORT=""
+        return 1
+    fi
+    return 0
+}
+
+stop_daemon() {
+    if [ -n "${DAEMON_PID:-}" ] && kill -0 "${DAEMON_PID}" 2>/dev/null; then
+        kill "${DAEMON_PID}" 2>/dev/null || true
+        wait "${DAEMON_PID}" 2>/dev/null || true
+    fi
+    DAEMON_PID=""
+    DAEMON_PORT=""
+}
+
+# Run pkcs11-tool through proxy, connecting to daemon via TLS.
+# Usage: run_pkcs11_tool <ca_cert> <client_cert> <client_key> [server_name]
+# Returns: exit code of test-pkcs11-tool. Stdout captured in PKCS11_OUTPUT.
+run_pkcs11_tool() {
+    local ca="$1"
+    local cert="$2"
+    local key="$3"
+    local server_name="${4:-localhost}"
+
+    PKCS11_OUTPUT=$(
+        PKCS11_PROXY_SOCKET="tls://127.0.0.1:${DAEMON_PORT}" \
+        PKCS11_PROXY_TLS_CERT="${cert}" \
+        PKCS11_PROXY_TLS_KEY="${key}" \
+        PKCS11_PROXY_TLS_CA="${ca}" \
+        PKCS11_PROXY_TLS_SERVER_NAME="${server_name}" \
+        timeout 5 "${TEST_PKCS11_TOOL}" "${PKCS11_PROXY_LIB}" 2>/dev/null
+    )
+    return $?
+}
+
 test_data_integrity() {
     log_header "Data Integrity over mTLS"
 
-    # T40: Full round-trip with PKCS#11 via proxy
-    # Requires pkcs11-daemon + SoftHSM — skip until Phase 1 is complete.
-    skip "T40" "Requires pkcs11-daemon with new TLS (Phase 1)"
+    # T40: Full round-trip with PKCS#11 via proxy over TLS
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T40" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "TOKEN_LABEL=cosign"; then
+            pass "T40: PKCS#11 round-trip over mTLS"
+        else
+            fail "T40: PKCS#11 round-trip over mTLS" "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
 
     # T41: Multiple sequential connections
-    skip "T41" "Requires pkcs11-daemon with new TLS (Phase 1)"
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T41" "daemon failed to start"
+    else
+        local all_ok=1
+        for i in 1 2 3; do
+            run_pkcs11_tool \
+                "${PKI_DIR}/root-ca.crt" \
+                "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+            if [ $? -ne 0 ]; then
+                all_ok=0
+                break
+            fi
+        done
+        if [ "${all_ok}" -eq 1 ]; then
+            pass "T41: Multiple sequential PKCS#11 connections"
+        else
+            fail "T41: Multiple sequential PKCS#11 connections" "failed on iteration ${i}"
+        fi
+    fi
+    stop_daemon
 }
 
 # ═══════════════════════════════════════════
 # SECCOMP (T50-T51)
 # ═══════════════════════════════════════════
 
+PKCS11_DAEMON_SECCOMP="${BUILD_DIR}/pkcs11-daemon-seccomp"
+
+# Start seccomp-enabled daemon with TLS.
+# Usage: start_daemon_seccomp <server_cert> <server_key> <ca_cert>
+start_daemon_seccomp() {
+    local cert="$1"
+    local key="$2"
+    local ca="$3"
+
+    local port
+    port=$(perl -MSocket -e 'socket(S,AF_INET,SOCK_STREAM,0); bind(S,sockaddr_in(0,INADDR_ANY)); ($p)=sockaddr_in(getsockname(S)); print $p; close S')
+
+    PKCS11_PROXY_TLS_CERT="${cert}" \
+    PKCS11_PROXY_TLS_KEY="${key}" \
+    PKCS11_PROXY_TLS_CA="${ca}" \
+    PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
+    "${PKCS11_DAEMON_SECCOMP}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" &
+    DAEMON_PID=$!
+    DAEMON_PORT="${port}"
+
+    sleep 0.5
+
+    if ! kill -0 "${DAEMON_PID}" 2>/dev/null; then
+        DAEMON_PID=""
+        DAEMON_PORT=""
+        return 1
+    fi
+    return 0
+}
+
 test_seccomp() {
     log_header "Seccomp"
 
-    skip "T50" "Requires pkcs11-daemon with SECCOMP + new TLS (Phase 1E)"
-    skip "T51" "Requires pkcs11-daemon with SECCOMP + new TLS (Phase 1E)"
+    if [ ! -x "${PKCS11_DAEMON_SECCOMP}" ]; then
+        skip "T50" "pkcs11-daemon-seccomp not built"
+        skip "T51" "pkcs11-daemon-seccomp not built"
+        return
+    fi
+
+    # T50: PKCS#11 round-trip works with SECCOMP enabled
+    start_daemon_seccomp \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T50" "seccomp daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "TOKEN_LABEL=cosign"; then
+            pass "T50: PKCS#11 round-trip with SECCOMP"
+        else
+            fail "T50: PKCS#11 round-trip with SECCOMP" "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
+
+    # T51: Multiple connections with SECCOMP
+    start_daemon_seccomp \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T51" "seccomp daemon failed to start"
+    else
+        local all_ok=1
+        for i in 1 2 3; do
+            run_pkcs11_tool \
+                "${PKI_DIR}/root-ca.crt" \
+                "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+            if [ $? -ne 0 ]; then
+                all_ok=0
+                break
+            fi
+        done
+        if [ "${all_ok}" -eq 1 ]; then
+            pass "T51: Multiple PKCS#11 connections with SECCOMP"
+        else
+            fail "T51: Multiple PKCS#11 connections with SECCOMP" "failed on iteration ${i}"
+        fi
+    fi
+    stop_daemon
 }
 
 # ═══════════════════════════════════════════

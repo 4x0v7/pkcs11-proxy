@@ -88,35 +88,76 @@ static int install_syscall_filter(const int sock, const char *path)
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
-	if (sock)
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(pselect6), 0);
+	if (sock) {
 		/* Allow accept() only for the listening socket */
 		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(accept), 1,
 				 SCMP_A0(SCMP_CMP_EQ, sock));
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(accept4), 1,
+				 SCMP_A0(SCMP_CMP_EQ, sock));
+	}
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(shutdown), 0);
 	if (path[0] &&
-	    strncmp(path, "tcp://", strlen("tcp://")) == 0) {
-		/* TCP socket - not needed for TLS */
+	    (strncmp(path, "tcp://", strlen("tcp://")) == 0 ||
+	     strncmp(path, "tls://", strlen("tls://")) == 0)) {
+		/* TCP/TLS socket */
 		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
+		/*
+		 * OpenSSL 3.x attempts kTLS via setsockopt(TCP_ULP).
+		 * getnameinfo may probe NSS via socket/connect.
+		 */
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(setsockopt), 0);
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(socket), 0);
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(connect), 0);
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getpeername), 0);
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getsockname), 0);
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(ioctl), 0);
 	}
 
 	/*
-	 * These are probably pthreads-related.
+	 * pthreads and memory management.
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(clone), 0);
+#ifdef __NR_clone3
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(clone3), 0);
+#endif
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(set_tid_address), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(munlock), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sysinfo), 0);
+#ifdef __NR_rseq
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rseq), 0);
+#endif
 
 	/*
-	 * Both pthreads (? file is "/sys/devices/system/cpu/online") and TLS-PSK open files.
+	 * pthreads reads /sys/devices/system/cpu/online at startup.
+	 * Certs are loaded before seccomp, so no TLS file I/O needed here.
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
 			 SCMP_A1(SCMP_CMP_EQ, O_RDONLY | O_CLOEXEC));
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(openat), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(newfstatat), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getdents64), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(pread64), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(prlimit64), 0);
 
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
+
+	/*
+	 * TLS 1.3 requires getrandom() for key material.
+	 */
+	if (path[0] &&
+	    strncmp(path, "tls://", strlen("tls://")) == 0) {
+		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getrandom), 0);
+	}
 
 	/*
 	 * UNIX domain socket
@@ -131,6 +172,19 @@ static int install_syscall_filter(const int sock, const char *path)
 	 * Allow spawned threads to initialize a new seccomp policy (subset of this).
 	 */
 	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(prctl), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(seccomp), 0);
+
+	/*
+	 * Signal handling and process management.
+	 */
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigsuspend), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(wait4), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(gettid), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getpid), 0);
+	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
 
 	/*
 	 * SoftHSM 1.3.0 required syscalls

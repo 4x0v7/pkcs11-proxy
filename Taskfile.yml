@@ -23,7 +23,7 @@ tasks:
   test:run:
     desc: Run tests (image must already be built)
     cmds:
-      - docker run --rm {{.TEST_IMAGE}}
+      - docker run --rm --security-opt seccomp=unconfined {{.TEST_IMAGE}}
 
   test:shell:
     desc: Interactive shell in test container
