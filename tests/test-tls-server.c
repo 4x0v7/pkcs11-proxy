@@ -11,12 +11,18 @@
  *   TEST_TLS_CA         - CA certificate for verifying client certs
  *   TEST_TLS_REQUIRE_MTLS - "true" to require client certs (default: true)
  *   TEST_TLS_PORT_FILE  - if set, write assigned port number to this file
+ *   TEST_TLS_VERIFY_OID - "true" to verify client OID policy extension
+ *   TEST_TLS_EXPECT_SERVICE   - expected service field (server-side policy check)
+ *   TEST_TLS_EXPECT_NAMESPACE - expected namespace field
+ *   TEST_TLS_EXPECT_KEYSET    - expected keyset field
+ *   TEST_TLS_EXPECT_REPO      - expected repo field (client-side policy on peer)
  *
  * Exit codes:
  *   0 = handshake + echo succeeded
  *   1 = configuration/setup error
  *   2 = handshake failed (expected in negative tests)
  *   3 = data exchange error
+ *   4 = OID policy verification failed
  */
 
 #include <stdio.h>
@@ -32,6 +38,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+
+#include "gck-rpc-tls-policy.h"
 
 static volatile int running = 1;
 
@@ -180,6 +188,53 @@ int main(void) {
 
 	fprintf(stderr, "test-tls-server: handshake OK, protocol=%s cipher=%s\n",
 		SSL_get_version(ssl), SSL_get_cipher_name(ssl));
+
+	/* OID policy verification (if requested) */
+	const char *verify_oid = getenv("TEST_TLS_VERIFY_OID");
+	if (verify_oid && strcmp(verify_oid, "true") == 0) {
+		X509 *peer_cert = SSL_get0_peer_certificate(ssl);
+		if (!peer_cert) {
+			fprintf(stderr, "test-tls-server: OID check: no peer cert\n");
+			ret = 4;
+			goto cleanup;
+		}
+
+		int json_len = 0;
+		char *json = policy_extract_json(peer_cert, &json_len);
+		if (!json) {
+			fprintf(stderr, "test-tls-server: OID check: no OID extension found\n");
+			ret = 4;
+			goto cleanup;
+		}
+
+		fprintf(stderr, "test-tls-server: OID policy JSON: %.*s\n", json_len, json);
+
+		/* Determine which validation to use based on env vars */
+		const char *expect_repo = getenv("TEST_TLS_EXPECT_REPO");
+		PolicyResult pr;
+
+		if (expect_repo) {
+			/* Validate as client policy */
+			const char *expect_keyset = getenv_or("TEST_TLS_EXPECT_KEYSET", "cosign-v1");
+			pr = policy_validate_client(json, json_len, expect_repo, expect_keyset);
+		} else {
+			/* Validate as server policy (checking client cert's server-style fields) */
+			const char *expect_svc = getenv("TEST_TLS_EXPECT_SERVICE");
+			const char *expect_ns = getenv("TEST_TLS_EXPECT_NAMESPACE");
+			const char *expect_ks = getenv("TEST_TLS_EXPECT_KEYSET");
+			pr = policy_validate_server(json, json_len, expect_svc, expect_ns, expect_ks);
+		}
+
+		free(json);
+
+		if (pr != POLICY_OK) {
+			fprintf(stderr, "test-tls-server: OID policy REJECTED: %s\n",
+				policy_result_str(pr));
+			ret = 4;
+			goto cleanup;
+		}
+		fprintf(stderr, "test-tls-server: OID policy ACCEPTED\n");
+	}
 
 	/* Echo: read some data, send it back */
 	char buf[4096];

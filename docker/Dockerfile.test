@@ -27,11 +27,13 @@ COPY . .
 # Build pkcs11-proxy
 RUN cmake . && make
 
-# Build test helpers
+# Build test helpers (linked with policy module + cJSON)
 RUN gcc -o tests/test-tls-server tests/test-tls-server.c \
+        gck-rpc-tls-policy.c ext/cjson/cJSON.c \
         -I. -Iext -Ipkcs11 \
         -lssl -lcrypto -Wall -Wextra \
     && gcc -o tests/test-tls-client tests/test-tls-client.c \
+        gck-rpc-tls-policy.c ext/cjson/cJSON.c \
         -I. -Iext -Ipkcs11 \
         -lssl -lcrypto -Wall -Wextra
 

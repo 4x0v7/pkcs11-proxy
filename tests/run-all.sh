@@ -51,6 +51,8 @@ skip() {
 # Start the test TLS server in background, wait for it to be ready, capture port.
 # Usage: start_server <server_cert> <server_key> <ca_cert> [require_mtls]
 # Sets: SERVER_PID, SERVER_PORT
+# Extra env vars for OID checks: set TEST_TLS_VERIFY_OID, TEST_TLS_EXPECT_REPO,
+# TEST_TLS_EXPECT_KEYSET etc. in the caller before invoking start_server.
 start_server() {
     local cert="$1"
     local key="$2"
@@ -66,6 +68,11 @@ start_server() {
     TEST_TLS_REQUIRE_MTLS="${mtls}" \
     TEST_TLS_PORT=0 \
     TEST_TLS_PORT_FILE="${port_file}" \
+    TEST_TLS_VERIFY_OID="${TEST_TLS_VERIFY_OID:-}" \
+    TEST_TLS_EXPECT_SERVICE="${TEST_TLS_EXPECT_SERVICE:-}" \
+    TEST_TLS_EXPECT_NAMESPACE="${TEST_TLS_EXPECT_NAMESPACE:-}" \
+    TEST_TLS_EXPECT_KEYSET="${TEST_TLS_EXPECT_KEYSET:-}" \
+    TEST_TLS_EXPECT_REPO="${TEST_TLS_EXPECT_REPO:-}" \
     "${TEST_SERVER}" &
     SERVER_PID=$!
 
@@ -104,6 +111,8 @@ stop_server() {
 
 # Run the test TLS client. Returns the client exit code.
 # Usage: run_client <ca_cert> [cert] [key] [server_name] [max_version] [message]
+# Extra env vars for OID checks: set TEST_TLS_VERIFY_OID, TEST_TLS_EXPECT_SERVICE,
+# TEST_TLS_EXPECT_NAMESPACE, TEST_TLS_EXPECT_KEYSET in the caller.
 run_client() {
     local ca="$1"
     local cert="${2:-}"
@@ -124,6 +133,20 @@ run_client() {
     fi
     if [ -n "${key}" ]; then
         env_args+=(TEST_TLS_KEY="${key}")
+    fi
+
+    # Forward OID verification env vars if set
+    if [ -n "${TEST_TLS_VERIFY_OID:-}" ]; then
+        env_args+=(TEST_TLS_VERIFY_OID="${TEST_TLS_VERIFY_OID}")
+    fi
+    if [ -n "${TEST_TLS_EXPECT_SERVICE:-}" ]; then
+        env_args+=(TEST_TLS_EXPECT_SERVICE="${TEST_TLS_EXPECT_SERVICE}")
+    fi
+    if [ -n "${TEST_TLS_EXPECT_NAMESPACE:-}" ]; then
+        env_args+=(TEST_TLS_EXPECT_NAMESPACE="${TEST_TLS_EXPECT_NAMESPACE}")
+    fi
+    if [ -n "${TEST_TLS_EXPECT_KEYSET:-}" ]; then
+        env_args+=(TEST_TLS_EXPECT_KEYSET="${TEST_TLS_EXPECT_KEYSET}")
     fi
 
     env "${env_args[@]}" "${TEST_CLIENT}" 2>/dev/null
@@ -258,14 +281,66 @@ test_tls_basic() {
 # plain CA verification only, so some will SKIP.
 # ═══════════════════════════════════════════
 
+clear_oid_env() {
+    unset TEST_TLS_VERIFY_OID TEST_TLS_EXPECT_SERVICE TEST_TLS_EXPECT_NAMESPACE
+    unset TEST_TLS_EXPECT_KEYSET TEST_TLS_EXPECT_REPO
+}
+
+# Helper: start server with OID policy enforcement on client certs.
+# The server verifies the client cert's OID has the expected client-policy fields.
+# Usage: start_server_oid_client <server_cert> <server_key> <ca> <expect_repo> <expect_keyset>
+start_server_oid_client() {
+    export TEST_TLS_VERIFY_OID="true"
+    export TEST_TLS_EXPECT_REPO="$4"
+    export TEST_TLS_EXPECT_KEYSET="$5"
+    export TEST_TLS_EXPECT_SERVICE=""
+    export TEST_TLS_EXPECT_NAMESPACE=""
+    start_server "$1" "$2" "$3" "true"
+    local rc=$?
+    clear_oid_env
+    return $rc
+}
+
+# Helper: expect server exit code after it processes one client.
+# Because the server verifies OID after handshake, a policy failure shows as server exit=4.
+# The client may still succeed the TLS handshake but get a connection-reset / error on echo.
+# Usage: expect_server_oid <test_id> <desc> <expected_server_exit> <ca> <client_cert> <client_key>
+expect_server_oid() {
+    local test_id="$1"
+    local desc="$2"
+    local expected_server_exit="$3"
+    local ca="$4"
+    local client_cert="$5"
+    local client_key="$6"
+
+    # Run client — it may succeed or fail depending on whether server closes connection
+    run_client "${ca}" "${client_cert}" "${client_key}" "localhost" "1.3" "PING" || true
+
+    # Wait for server to finish
+    wait "${SERVER_PID}" 2>/dev/null
+    local server_exit=$?
+
+    local ok=0
+    for e in $(echo "${expected_server_exit}" | tr '|' ' '); do
+        if [ "${server_exit}" -eq "${e}" ]; then
+            ok=1
+            break
+        fi
+    done
+
+    if [ "${ok}" -eq 1 ]; then
+        pass "${test_id}: ${desc}"
+    else
+        fail "${test_id}: ${desc}" "expected server exit=${expected_server_exit}, got=${server_exit}"
+    fi
+    SERVER_PID=""
+    SERVER_PORT=""
+}
+
 test_oid_server_side() {
     log_header "OID JSON Policy — Server-Side"
 
-    # For now, these tests use the basic test-tls-server which does CA-only verification.
-    # Once the pkcs11-proxy TLS layer is rewritten (Phase 1C), we'll point these at
-    # pkcs11-daemon instead. For now, mark OID-specific tests as SKIP.
-
-    # T10: Client cert with valid OID policy JSON
+    # T10: Client cert with valid OID policy JSON (no OID enforcement — basic CA check)
     start_server \
         "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
         "${PKI_DIR}/root-ca.crt" "true"
@@ -279,14 +354,77 @@ test_oid_server_side() {
     fi
     stop_server
 
-    # T11-T16: These require OID verification in the server callback.
-    # They will pass once the verify callback rejects certs without/bad OID.
-    skip "T11" "Requires OID verify callback (Phase 1C)"
-    skip "T12" "Requires OID verify callback (Phase 1C)"
-    skip "T13" "Requires OID verify callback (Phase 1C)"
-    skip "T14" "Requires OID verify callback (Phase 1C)"
-    skip "T15" "Requires OID verify callback (Phase 1C)"
-    skip "T16" "Requires OID verify callback (Phase 1C)"
+    # T11: Valid client OID + OID enforcement → server accepts (exit 0)
+    start_server_oid_client \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T11" "server failed to start"
+    else
+        expect_server_oid "T11" "Valid client OID → server accepts" 0 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+    fi
+
+    # T12: Client cert with no OID extension → server rejects (exit 4)
+    start_server_oid_client \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T12" "server failed to start"
+    else
+        expect_server_oid "T12" "No OID client cert → server rejects" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-no-oid.crt" "${PKI_DIR}/client-no-oid.key"
+    fi
+
+    # T13: Client cert with wrong repo → server rejects (exit 4)
+    start_server_oid_client \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T13" "server failed to start"
+    else
+        expect_server_oid "T13" "Wrong repo in client OID → server rejects" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-wrong-repo.crt" "${PKI_DIR}/client-wrong-repo.key"
+    fi
+
+    # T14: Client cert with wrong keyset → server rejects (exit 4)
+    start_server_oid_client \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T14" "server failed to start"
+    else
+        expect_server_oid "T14" "Wrong keyset in client OID → server rejects" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-wrong-keyset.crt" "${PKI_DIR}/client-wrong-keyset.key"
+    fi
+
+    # T15: Client cert with invalid JSON in OID → server rejects (exit 4)
+    start_server_oid_client \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T15" "server failed to start"
+    else
+        expect_server_oid "T15" "Invalid JSON in client OID → server rejects" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-invalid-json.crt" "${PKI_DIR}/client-invalid-json.key"
+    fi
+
+    # T16: Client cert with extra fields in OID → server rejects (exit 4)
+    start_server_oid_client \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T16" "server failed to start"
+    else
+        expect_server_oid "T16" "Extra fields in client OID → server rejects" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-extra-fields.crt" "${PKI_DIR}/client-extra-fields.key"
+    fi
 }
 
 # ═══════════════════════════════════════════
@@ -296,11 +434,81 @@ test_oid_server_side() {
 test_oid_client_side() {
     log_header "OID JSON Policy — Client-Side"
 
-    # Similarly, client-side OID verification requires the updated client TLS code.
-    skip "T20" "Requires OID verify callback (Phase 1C)"
-    skip "T21" "Requires OID verify callback (Phase 1C)"
-    skip "T22" "Requires OID verify callback (Phase 1C)"
-    skip "T23" "Requires OID verify callback (Phase 1C)"
+    # T20: Client verifies server cert with valid OID → accepted
+    start_server \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" "true"
+    if [ $? -ne 0 ]; then
+        fail "T20" "server failed to start"
+    else
+        export TEST_TLS_VERIFY_OID="true"
+        export TEST_TLS_EXPECT_SERVICE="pkcs11-proxy"
+        export TEST_TLS_EXPECT_NAMESPACE="sigstore"
+        export TEST_TLS_EXPECT_KEYSET="cosign-v1"
+        expect_exit "T20" "Client verifies valid server OID → accepted" 0 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key" \
+            "localhost"
+        clear_oid_env
+    fi
+    stop_server
+
+    # T21: Client verifies server cert with no OID → rejected (exit 4)
+    start_server \
+        "${PKI_DIR}/server-no-oid.crt" "${PKI_DIR}/server-no-oid.key" \
+        "${PKI_DIR}/root-ca.crt" "true"
+    if [ $? -ne 0 ]; then
+        fail "T21" "server failed to start"
+    else
+        export TEST_TLS_VERIFY_OID="true"
+        export TEST_TLS_EXPECT_SERVICE="pkcs11-proxy"
+        export TEST_TLS_EXPECT_NAMESPACE="sigstore"
+        export TEST_TLS_EXPECT_KEYSET="cosign-v1"
+        expect_exit "T21" "Client verifies server with no OID → rejected" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key" \
+            "localhost"
+        clear_oid_env
+    fi
+    stop_server
+
+    # T22: Client verifies server cert with wrong service → rejected (exit 4)
+    start_server \
+        "${PKI_DIR}/server-wrong-svc.crt" "${PKI_DIR}/server-wrong-svc.key" \
+        "${PKI_DIR}/root-ca.crt" "true"
+    if [ $? -ne 0 ]; then
+        fail "T22" "server failed to start"
+    else
+        export TEST_TLS_VERIFY_OID="true"
+        export TEST_TLS_EXPECT_SERVICE="pkcs11-proxy"
+        export TEST_TLS_EXPECT_NAMESPACE="sigstore"
+        export TEST_TLS_EXPECT_KEYSET="cosign-v1"
+        expect_exit "T22" "Client verifies server with wrong service → rejected" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key" \
+            "localhost"
+        clear_oid_env
+    fi
+    stop_server
+
+    # T23: Client verifies server cert with wrong namespace → rejected (exit 4)
+    start_server \
+        "${PKI_DIR}/server-wrong-ns.crt" "${PKI_DIR}/server-wrong-ns.key" \
+        "${PKI_DIR}/root-ca.crt" "true"
+    if [ $? -ne 0 ]; then
+        fail "T23" "server failed to start"
+    else
+        export TEST_TLS_VERIFY_OID="true"
+        export TEST_TLS_EXPECT_SERVICE="pkcs11-proxy"
+        export TEST_TLS_EXPECT_NAMESPACE="sigstore"
+        export TEST_TLS_EXPECT_KEYSET="cosign-v1"
+        expect_exit "T23" "Client verifies server with wrong namespace → rejected" 4 \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key" \
+            "localhost"
+        clear_oid_env
+    fi
+    stop_server
 }
 
 # ═══════════════════════════════════════════

@@ -13,13 +13,17 @@
  *   TEST_TLS_SERVER_NAME - expected server hostname for verification (default: localhost)
  *   TEST_TLS_MAX_VERSION - "1.2" to force TLS 1.2 (for negative test), default: 1.3
  *   TEST_TLS_MESSAGE     - message to send (default: "PING")
+ *   TEST_TLS_VERIFY_OID - "true" to verify server OID policy extension
+ *   TEST_TLS_EXPECT_SERVICE   - expected service field
+ *   TEST_TLS_EXPECT_NAMESPACE - expected namespace field
+ *   TEST_TLS_EXPECT_KEYSET    - expected keyset field
  *
  * Exit codes:
  *   0 = handshake + echo succeeded
  *   1 = configuration/setup error
  *   2 = handshake failed (expected in negative tests)
  *   3 = data exchange error
- *   4 = echo mismatch
+ *   4 = echo mismatch or OID policy verification failed
  */
 
 #include <stdio.h>
@@ -33,6 +37,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+
+#include "gck-rpc-tls-policy.h"
 
 static const char *getenv_or(const char *name, const char *def) {
 	const char *v = getenv(name);
@@ -149,6 +155,42 @@ int main(void) {
 
 	fprintf(stderr, "test-tls-client: handshake OK, protocol=%s cipher=%s\n",
 		SSL_get_version(ssl), SSL_get_cipher_name(ssl));
+
+	/* OID policy verification of server cert (if requested) */
+	const char *verify_oid = getenv("TEST_TLS_VERIFY_OID");
+	if (verify_oid && strcmp(verify_oid, "true") == 0) {
+		X509 *peer_cert = SSL_get0_peer_certificate(ssl);
+		if (!peer_cert) {
+			fprintf(stderr, "test-tls-client: OID check: no peer cert\n");
+			ret = 4;
+			goto cleanup;
+		}
+
+		int json_len = 0;
+		char *json = policy_extract_json(peer_cert, &json_len);
+		if (!json) {
+			fprintf(stderr, "test-tls-client: OID check: no OID extension found\n");
+			ret = 4;
+			goto cleanup;
+		}
+
+		fprintf(stderr, "test-tls-client: OID policy JSON: %.*s\n", json_len, json);
+
+		const char *expect_svc = getenv("TEST_TLS_EXPECT_SERVICE");
+		const char *expect_ns = getenv("TEST_TLS_EXPECT_NAMESPACE");
+		const char *expect_ks = getenv("TEST_TLS_EXPECT_KEYSET");
+		PolicyResult pr = policy_validate_server(json, json_len, expect_svc, expect_ns, expect_ks);
+
+		free(json);
+
+		if (pr != POLICY_OK) {
+			fprintf(stderr, "test-tls-client: OID policy REJECTED: %s\n",
+				policy_result_str(pr));
+			ret = 4;
+			goto cleanup;
+		}
+		fprintf(stderr, "test-tls-client: OID policy ACCEPTED\n");
+	}
 
 	/* Send message */
 	int msg_len = (int)strlen(message);

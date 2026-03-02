@@ -57,6 +57,9 @@ step certificate create "Wrong Root CA" \
     --no-password --insecure
 
 # ─── Helper: create a leaf cert signed by a CA with a template ───
+# Usage: gen_leaf <name> <cn> <template> <ca_cert> <ca_key> [policy_json] [extra_args...]
+# If policy_json is non-empty, it's written as a string value to a temp JSON file
+# and passed via --set-file to avoid step's --set parsing JSON objects into Go maps.
 
 gen_leaf() {
     local name="$1"
@@ -64,10 +67,19 @@ gen_leaf() {
     local template="$3"
     local ca_cert="$4"
     local ca_key="$5"
-    shift 5
-    # Remaining args are --san and --set flags
+    local policy_json="${6:-}"
+    shift 6 2>/dev/null || shift 5
+    # Remaining args are --san flags
 
     echo "  Generating: ${name}"
+
+    local set_file_args=()
+    if [ -n "${policy_json}" ]; then
+        local vars_file="${PKI_DIR}/.vars-${name}.json"
+        # Write a JSON file where oidPolicy is a string (not parsed as object)
+        printf '{"oidPolicy": %s}\n' "$(echo "${policy_json}" | jq -Rs '.')" > "${vars_file}"
+        set_file_args=(--set-file "${vars_file}")
+    fi
 
     step certificate create "${cn}" \
         "${PKI_DIR}/${name}.crt" "${PKI_DIR}/${name}.key" \
@@ -76,6 +88,7 @@ gen_leaf() {
         --kty EC --curve P-256 \
         --not-after 8760h \
         --no-password --insecure \
+        "${set_file_args[@]}" \
         "$@"
 }
 
@@ -85,22 +98,23 @@ echo "=== Generating Server Certs ==="
 
 gen_leaf "server-valid" "pkcs11-proxy" "${TPL_DIR}/server-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --san localhost --san 127.0.0.1 \
-    --set "oidPolicy=${SERVER_POLICY_VALID}"
+    "${SERVER_POLICY_VALID}" \
+    --san localhost --san 127.0.0.1
 
 gen_leaf "server-no-oid" "pkcs11-proxy" "${TPL_DIR}/server-no-oid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
+    "" \
     --san localhost --san 127.0.0.1
 
 gen_leaf "server-wrong-svc" "pkcs11-proxy" "${TPL_DIR}/server-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --san localhost --san 127.0.0.1 \
-    --set "oidPolicy=${SERVER_POLICY_WRONG_SVC}"
+    "${SERVER_POLICY_WRONG_SVC}" \
+    --san localhost --san 127.0.0.1
 
 gen_leaf "server-wrong-ns" "pkcs11-proxy" "${TPL_DIR}/server-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --san localhost --san 127.0.0.1 \
-    --set "oidPolicy=${SERVER_POLICY_WRONG_NS}"
+    "${SERVER_POLICY_WRONG_NS}" \
+    --san localhost --san 127.0.0.1
 
 # ─── 4. Client certs ───
 
@@ -108,34 +122,34 @@ echo "=== Generating Client Certs ==="
 
 gen_leaf "client-valid" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_VALID}"
+    "${CLIENT_POLICY_VALID}"
 
 gen_leaf "client-no-oid" "ci-runner" "${TPL_DIR}/client-no-oid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key"
 
 gen_leaf "client-wrong-repo" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_WRONG_REPO}"
+    "${CLIENT_POLICY_WRONG_REPO}"
 
 gen_leaf "client-wrong-keyset" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_WRONG_KEYSET}"
+    "${CLIENT_POLICY_WRONG_KEYSET}"
 
 gen_leaf "client-invalid-json" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_INVALID_JSON}"
+    "${CLIENT_POLICY_INVALID_JSON}"
 
 gen_leaf "client-oversized" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_OVERSIZED}"
+    "${CLIENT_POLICY_OVERSIZED}"
 
 gen_leaf "client-extra-fields" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_EXTRA_FIELDS}"
+    "${CLIENT_POLICY_EXTRA_FIELDS}"
 
 gen_leaf "client-wrong-ca" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/wrong-ca.crt" "${PKI_DIR}/wrong-ca.key" \
-    --set "oidPolicy=${CLIENT_POLICY_VALID}"
+    "${CLIENT_POLICY_VALID}"
 
 # ─── 5. Summary ───
 
