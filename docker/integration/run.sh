@@ -21,6 +21,11 @@ echo ""
 echo "=== Server logs ==="
 docker compose -f "${COMPOSE_FILE}" logs server 2>/dev/null || true
 
+# Show sslscan output
+echo ""
+echo "=== sslscan output ==="
+docker compose -f "${COMPOSE_FILE}" logs sslscan 2>/dev/null || true
+
 # Clean up
 echo ""
 docker compose -f "${COMPOSE_FILE}" down -v 2>/dev/null || true

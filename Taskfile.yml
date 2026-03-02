@@ -46,6 +46,11 @@ tasks:
     cmds:
       - dagger call -m .dagger integration-test --src=.
 
+  dagger:sslscan:
+    desc: Run sslscan TLS audit via Dagger
+    cmds:
+      - dagger call -m .dagger sslscan --src=.
+
   lint:
     desc: Run all linters (ruff fmt + ruff check + ty)
     cmds:

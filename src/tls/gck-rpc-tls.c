@@ -130,6 +130,12 @@ gck_rpc_init_tls(GckRpcTlsState *state, enum gck_rpc_tls_caller caller)
 	/* Set TLS 1.3 ciphersuites */
 	SSL_CTX_set_ciphersuites(state->ssl_ctx, PKCS11PROXY_TLS13_CIPHERSUITES);
 
+	/* Restrict key exchange to EC curves only (no ffdhe) */
+	if (!SSL_CTX_set1_groups_list(state->ssl_ctx, "P-256:P-384:P-521:X25519:X448")) {
+		gck_rpc_warn("can't set supported groups");
+		return 0;
+	}
+
 	/* Disable compression, for security (CRIME Attack). */
 	SSL_CTX_set_options(state->ssl_ctx, SSL_OP_NO_COMPRESSION | SSL_OP_IGNORE_UNEXPECTED_EOF);
 

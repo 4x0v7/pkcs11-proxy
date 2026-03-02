@@ -45,5 +45,12 @@ services:
     volumes:
       - pki:/pki:ro
 
+  sslscan:
+    image: cmoore1776/sslscan:latest
+    entrypoint: ["/bin/sh", "-c", "for i in $(seq 1 15); do sslscan server:2345 && exit 0; sleep 1; done; echo 'sslscan: server unreachable after 15 retries'; exit 1"]
+    depends_on:
+      server:
+        condition: service_started
+
 volumes:
   pki:

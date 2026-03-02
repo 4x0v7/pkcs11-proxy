@@ -62,7 +62,7 @@ class Pkcs11Proxy:
 
     @function(cache="never")
     async def integration_test(self, src: dagger.Directory) -> str:
-        """Run Docker-based integration tests (PKI + daemon + client)."""
+        """Run Docker-based integration tests (PKI + daemon + client + sslscan)."""
         pki = self._generate_pki(src)
         daemon = self._daemon_service(src, pki)
 
@@ -77,5 +77,19 @@ class Pkcs11Proxy:
                     "/build/pkcs11-proxy/docker/integration/entrypoint-client.sh",
                 ]
             )
+            .stdout()
+        )
+
+    @function(cache="never")
+    async def sslscan(self, src: dagger.Directory) -> str:
+        """Run sslscan against the daemon to audit TLS configuration."""
+        pki = self._generate_pki(src)
+        daemon = self._daemon_service(src, pki)
+
+        return await (
+            dagger.dag.container()
+            .from_("cmoore1776/sslscan:latest")
+            .with_service_binding("server", daemon)
+            .with_exec(["sslscan", "server:2345"])
             .stdout()
         )
