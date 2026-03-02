@@ -43,6 +43,7 @@ static void reporter(int nr, siginfo_t *info, void *void_context)
 	char buf[128];
 	ucontext_t *ctx = (ucontext_t *)(void_context);
 	unsigned int syscall;
+	(void)nr;
 	if (info->si_code != SYS_SECCOMP)
 		return;
 	if (!ctx)

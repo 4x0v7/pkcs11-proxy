@@ -54,11 +54,13 @@ This produces:
 
 ```bash
 gcc -o pkcs11-daemon-seccomp \
-    gck-rpc-daemon-standalone.c gck-rpc-dispatch.c gck-rpc-message.c \
-    gck-rpc-util.c egg-buffer.c gck-rpc-tls.c gck-rpc-tls-policy.c \
+    src/daemon/gck-rpc-daemon-standalone.c src/common/gck-rpc-dispatch.c \
+    src/common/gck-rpc-message.c src/common/gck-rpc-util.c \
+    src/common/egg-buffer.c src/tls/gck-rpc-tls.c \
+    src/tls/gck-rpc-tls-policy.c src/seccomp/syscall-reporter.c \
     ext/cjson/cJSON.c \
-    -DSECCOMP \
-    -I. -Iext -Ipkcs11 \
+    -D_GNU_SOURCE -DSECCOMP -DDEBUG_SECCOMP \
+    -Iinclude -I. -Iext -Ipkcs11 \
     -ldl -lpthread -lssl -lcrypto -lseccomp -Wall -Wextra
 ```
 
@@ -345,35 +347,46 @@ The [Dagger](https://dagger.io/) module (`.dagger/`) replicates the Docker Compo
 ## Project Structure
 
 ```
-├── gck-rpc-daemon-standalone.c   # Server daemon (main, seccomp filter)
-├── gck-rpc-dispatch.c            # Server dispatch threads (seccomp filter)
-├── gck-rpc-module.c              # Client PKCS#11 proxy library
-├── gck-rpc-tls.c                 # TLS 1.3 init, handshake, OID policy wiring
-├── gck-rpc-tls.h                 # TLS types and function declarations
-├── gck-rpc-tls-policy.c          # OID JSON extraction and validation
-├── gck-rpc-tls-policy.h          # Policy types and function declarations
-├── gck-rpc-tls-psk.c             # Legacy TLS-PSK (deprecated, unused)
-├── ext/cjson/                    # Embedded cJSON library
+├── src/
+│   ├── daemon/
+│   │   └── gck-rpc-daemon-standalone.c  # Server daemon (main, signal handling)
+│   ├── proxy/
+│   │   └── gck-rpc-module.c             # Client PKCS#11 proxy library
+│   ├── common/
+│   │   ├── gck-rpc-dispatch.c           # Server RPC dispatch threads
+│   │   ├── gck-rpc-message.c            # RPC message serialization
+│   │   ├── gck-rpc-util.c               # Shared utilities
+│   │   └── egg-buffer.c                 # Dynamic buffer implementation
+│   ├── tls/
+│   │   ├── gck-rpc-tls.c               # TLS 1.3 init, handshake, policy wiring
+│   │   └── gck-rpc-tls-policy.c        # OID JSON extraction and validation
+│   └── seccomp/
+│       └── syscall-reporter.c           # Seccomp syscall reporter
+├── include/                             # All header files
+│   ├── config.h, egg-buffer.h
+│   ├── gck-rpc-layer.h, gck-rpc-private.h
+│   ├── gck-rpc-tls.h, gck-rpc-tls-policy.h
+│   └── seccomp-bpf.h, syscall-reporter.h
+├── ext/cjson/                           # Embedded cJSON library
 ├── .dagger/
-│   └── src/pkcs_11_proxy/main.py # Dagger CI module (test + integration-test)
+│   └── src/pkcs_11_proxy/main.py        # Dagger CI module (test + integration-test)
 ├── docker/
-│   ├── Dockerfile.test           # Test image (SoftHSM + step CLI + test PKI)
-│   ├── Dockerfile.server         # Production server image
-│   ├── docker-compose.test.yml   # Integration test compose file
+│   ├── Dockerfile.test                  # Test image (SoftHSM + step CLI + test PKI)
+│   ├── docker-compose.test.yml          # Integration test compose file
 │   └── integration/
-│       ├── run.sh                # Compose orchestration script
-│       ├── generate-pki.sh       # Ephemeral PKI for integration tests
-│       ├── entrypoint-server.sh  # Server container entrypoint
-│       └── entrypoint-client.sh  # Client container entrypoint (I1–I5)
+│       ├── run.sh                       # Compose orchestration script
+│       ├── generate-pki.sh              # Ephemeral PKI for integration tests
+│       ├── entrypoint-server.sh         # Server container entrypoint
+│       └── entrypoint-client.sh         # Client container entrypoint (I1–I5)
 ├── tests/
-│   ├── run-all.sh                # Unit test runner (T01–T63)
-│   ├── generate-test-pki.sh      # Unit test PKI generator (step CLI)
-│   ├── templates/                # Step CLI certificate templates
-│   ├── test-tls-server.c         # TLS test harness (server)
-│   ├── test-tls-client.c         # TLS test harness (client)
-│   └── test-pkcs11-tool.c        # PKCS#11 crypto test (EC keygen, ECDSA sign/verify)
-├── CMakeLists.txt                # Build system
-└── Taskfile.yml                  # Task runner (build, test, deploy)
+│   ├── run-all.sh                       # Unit test runner (T01–T63)
+│   ├── generate-test-pki.sh             # Unit test PKI generator (step CLI)
+│   ├── templates/                       # Step CLI certificate templates
+│   ├── test-tls-server.c               # TLS test harness (server)
+│   ├── test-tls-client.c               # TLS test harness (client)
+│   └── test-pkcs11-tool.c              # PKCS#11 crypto test (EC keygen, ECDSA sign/verify)
+├── CMakeLists.txt                       # Build system
+└── Taskfile.yml                         # Task runner (build, test, lint)
 ```
 
 ## Security Considerations
@@ -397,7 +410,7 @@ Layer 3 is the key differentiator: even if an attacker compromises a CI runner a
 - **Seccomp-BPF** — Daemon and dispatch threads run with syscall whitelists. Blocked syscalls kill the process (`SCMP_ACT_KILL`).
 - **Policy JSON size limit** — 16 KB max prevents DoS via oversized extensions.
 - **Strict field checking** — Extra fields in policy JSON are rejected to prevent injection of unexpected claims.
-- **No PSK** — TLS-PSK code is deprecated and not linked into the build. Only certificate-based authentication is supported.
+- **No PSK** — Only certificate-based authentication is supported.
 
 ## License
 

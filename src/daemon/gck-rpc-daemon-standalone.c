@@ -58,6 +58,8 @@
 
 static int install_syscall_filter(const int sock, const char *path)
 {
+	(void)sock;
+	(void)path;
 #ifdef SECCOMP
 	int rc = -1;
 	scmp_filter_ctx ctx;

@@ -1550,6 +1550,7 @@ static CK_RV
 rpc_C_WaitForSlotEvent(CK_FLAGS flags, CK_SLOT_ID_PTR slot,
 		       CK_VOID_PTR reserved)
 {
+	(void)reserved;
 	return_val_if_fail(slot, CKR_ARGUMENTS_BAD);
 
 	BEGIN_CALL(C_WaitForSlotEvent);
@@ -1563,6 +1564,8 @@ static CK_RV
 rpc_C_OpenSession(CK_SLOT_ID id, CK_FLAGS flags, CK_VOID_PTR user_data,
 		  CK_NOTIFY callback, CK_SESSION_HANDLE_PTR session)
 {
+	(void)user_data;
+	(void)callback;
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	/* It is unnecessarily intrusive to check session here. Leave it to the p11 module.
 	 * return_val_if_fail(session, CKR_ARGUMENTS_BAD);

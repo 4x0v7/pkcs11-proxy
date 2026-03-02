@@ -48,7 +48,7 @@ else()
     # Error; with REQUIRED, pkg_search_module() will throw an error by it's own
 endif()
 
-add_definitions(-Wall)
+add_definitions(-Wall -Wextra)
 
 # Project include paths — resolves all #include "foo.h" from the new layout
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -96,19 +96,3 @@ add_custom_command(
 set_source_files_properties(${CMAKE_SOURCE_DIR}/include/syscall-names.h PROPERTIES GENERATED TRUE)
 target_sources(pkcs11-daemon PRIVATE ${CMAKE_SOURCE_DIR}/include/syscall-names.h)
 
-set(CPACK_PACKAGE_VERSION ${VERSION})
-set(CPACK_GENERATOR "RPM")
-set(CPACK_PACKAGE_NAME "pkcs11_proxy")
-set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_RPM_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "PKCS#11 Proxy")
-set(CPACK_PACKAGE_CONTACT "Jon Scobie")
-set(CPACK_PACKAGE_VENDOR "Callsign Inc")
-set(CPACK_RPM_PACKAGE_LICENSE "GPL v2")
-set(CPACK_RPM_PACKAGE_AUTOREQPROV " no")
-set(CPACK_PACKAGE_DESCRIPTION_FILE, "${CMAKE_CURRENT_BINARY_DIR}/USAGE")
-set(CPACK_PACKAGING_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
-set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "/usr/local;/usr/local/lib;/usr/local/bin")
-set(CPACK_SOURCE_GENERATOR "RPM")
-include(CPack)

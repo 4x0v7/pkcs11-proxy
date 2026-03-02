@@ -2655,6 +2655,7 @@ void gck_rpc_layer_uninitialize(void)
  */
 static int _install_dispatch_syscall_filter(int use_tls)
 {
+	(void)use_tls;
 #ifdef SECCOMP
 	int rc = -1;
 	scmp_filter_ctx ctx;
