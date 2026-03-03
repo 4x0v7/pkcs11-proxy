@@ -4,7 +4,7 @@
 # define DEBUG_OUTPUT 0 // change to 1 to enable debugging
 
 # define PKCS11PROXY_LISTEN_BACKLOG 128
-# define PKCS11PROXY_MAX_SESSION_COUNT 1
+# define PKCS11PROXY_MAX_SESSION_COUNT 16
 
 // TLS 1.3 ciphersuites are configured in gck-rpc-tls.c
 
