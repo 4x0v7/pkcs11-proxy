@@ -31,7 +31,7 @@ jobs:
         working-directory: .dagger
         run: ty check src/pkcs_11_proxy/
 
-  test:
+  unit-test:
     name: Unit tests (Dagger)
     runs-on: ubuntu-latest
     steps:
@@ -48,7 +48,6 @@ jobs:
   integration:
     name: Integration tests (Dagger)
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v6
 
@@ -63,7 +62,6 @@ jobs:
   sslscan:
     name: TLS audit (sslscan)
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v6
 
@@ -78,7 +76,6 @@ jobs:
   trivy:
     name: Trivy vulnerability scan
     runs-on: ubuntu-latest
-    needs: test
     permissions:
       contents: read
       security-events: write  # required to upload SARIF
