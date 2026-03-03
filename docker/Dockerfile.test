@@ -1,25 +1,18 @@
-# Pull step CLI binary from smallstep image
-FROM smallstep/step-cli:latest AS step-cli
-
-FROM debian:bookworm-slim
+FROM cgr.dev/chainguard/wolfi-base
 
 # Build + test dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apk update && apk add --no-cache \
     bash \
-    build-essential \
+    build-base \
     cmake \
-    pkg-config \
-    libssl-dev \
+    pkgconf \
+    openssl-dev \
     libseccomp-dev \
     openssl \
-    softhsm2 \
-    opensc \
+    softhsm \
     jq \
     procps \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install step CLI
-COPY --from=step-cli /usr/local/bin/step /usr/local/bin/step
+    step
 
 WORKDIR /build/pkcs11-proxy
 COPY . .

@@ -17,6 +17,20 @@ SOFTHSM_MODULE="/usr/lib/softhsm/libsofthsm2.so"
 
 DAEMON_PID=""
 
+# Find a free TCP port — pure shell, no perl/python needed.
+find_free_port() {
+    local port
+    while true; do
+        port=$(( (RANDOM % 16384) + 49152 ))
+        # Check /proc/net/tcp for ports in use (hex-encoded, field 2, after ':')
+        if ! awk '{print $2}' /proc/net/tcp 2>/dev/null | \
+             grep -qi ":$(printf '%04X' "$port")$"; then
+            echo "$port"
+            return
+        fi
+    done
+}
+
 PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
@@ -567,7 +581,7 @@ start_daemon() {
 
     # Find a free port
     local port
-    port=$(perl -MSocket -e 'socket(S,AF_INET,SOCK_STREAM,0); bind(S,sockaddr_in(0,INADDR_ANY)); ($p)=sockaddr_in(getsockname(S)); print $p; close S')
+    port=$(find_free_port)
 
     PKCS11_PROXY_TLS_CERT="${cert}" \
     PKCS11_PROXY_TLS_KEY="${key}" \
@@ -679,7 +693,7 @@ start_daemon_seccomp() {
     local ca="$3"
 
     local port
-    port=$(perl -MSocket -e 'socket(S,AF_INET,SOCK_STREAM,0); bind(S,sockaddr_in(0,INADDR_ANY)); ($p)=sockaddr_in(getsockname(S)); print $p; close S')
+    port=$(find_free_port)
 
     PKCS11_PROXY_TLS_CERT="${cert}" \
     PKCS11_PROXY_TLS_KEY="${key}" \
@@ -767,7 +781,7 @@ start_daemon_with_policy() {
     local policy_keyset="$5"
 
     local port
-    port=$(perl -MSocket -e 'socket(S,AF_INET,SOCK_STREAM,0); bind(S,sockaddr_in(0,INADDR_ANY)); ($p)=sockaddr_in(getsockname(S)); print $p; close S')
+    port=$(find_free_port)
 
     PKCS11_PROXY_TLS_CERT="${cert}" \
     PKCS11_PROXY_TLS_KEY="${key}" \

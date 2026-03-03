@@ -1,0 +1,53 @@
+# Production image for pkcs11-daemon with mTLS + OID policy.
+#
+# Multi-stage: build on Wolfi, runtime on Wolfi (Chainguard).
+# Zero-CVE base, glibc, non-root by default.
+#
+# Usage:
+#   docker build -f docker/Dockerfile.server -t pkcs11-proxy .
+
+# ── Build stage ──────────────────────────────────────────────
+FROM cgr.dev/chainguard/wolfi-base AS build
+
+RUN apk update && apk add --no-cache \
+    bash \
+    build-base \
+    cmake \
+    pkgconf \
+    openssl-dev \
+    libseccomp-dev
+
+WORKDIR /build/pkcs11-proxy
+COPY . .
+
+RUN cmake -DCMAKE_BUILD_TYPE=Release . && make
+
+# ── Runtime stage ────────────────────────────────────────────
+FROM cgr.dev/chainguard/wolfi-base
+
+RUN apk update && apk add --no-cache \
+    openssl \
+    libseccomp \
+    softhsm
+
+# Create non-root user
+RUN addgroup -S pkcs11 && adduser -S -G pkcs11 -h /home/pkcs11 -s /sbin/nologin pkcs11
+
+# Copy built artifacts
+COPY --from=build /build/pkcs11-proxy/pkcs11-daemon /usr/local/bin/pkcs11-daemon
+COPY --from=build /build/pkcs11-proxy/libpkcs11-proxy.so /usr/local/lib/libpkcs11-proxy.so
+RUN ldconfig
+
+# SoftHSM directories — token storage mounted as a volume in production
+RUN mkdir -p /var/lib/softhsm/tokens /etc/softhsm \
+    && chown -R pkcs11:pkcs11 /var/lib/softhsm
+
+# TLS certs mounted at /tls in production (read-only)
+RUN mkdir -p /tls && chown pkcs11:pkcs11 /tls
+
+EXPOSE 2345
+
+USER pkcs11
+
+ENTRYPOINT ["pkcs11-daemon"]
+CMD ["/usr/lib/softhsm/libsofthsm2.so", "tls://0.0.0.0:2345"]
