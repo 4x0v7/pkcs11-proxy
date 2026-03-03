@@ -280,6 +280,8 @@ int main(int argc, char *argv[])
 
         openlog("pkcs11-proxy",LOG_CONS|LOG_PID,LOG_DAEMON);
 
+	fprintf(stderr, "pkcs11-proxy starting\n");
+
 	/* Load the library */
 	module = dlopen(argv[1], RTLD_NOW);
 	if (!module) {
@@ -287,6 +289,7 @@ int main(int argc, char *argv[])
 			dlerror());
 		exit(1);
 	}
+	fprintf(stderr, "  module: %s\n", argv[1]);
 
 	/* Lookup the appropriate function in library */
 	func_get_list =
@@ -318,6 +321,7 @@ int main(int argc, char *argv[])
 			argv[1], (int)rv);
 		exit(1);
 	}
+	fprintf(stderr, "  pkcs11: module initialized\n");
 
 	path = getenv("PKCS11_DAEMON_SOCKET");
 	if (!path && argc == 3)
@@ -338,6 +342,10 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "TLS initialization failed\n");
 			exit(1);
 		}
+		fprintf(stderr, "  tls:    TLS 1.3 server initialized (mTLS=%s)\n",
+			getenv("PKCS11_PROXY_TLS_REQUIRE_MTLS") &&
+			strcmp(getenv("PKCS11_PROXY_TLS_REQUIRE_MTLS"), "true") == 0
+			? "required" : "off");
 	}
 
 	if (strcmp(path,"-") == 0) {
@@ -356,6 +364,9 @@ int main(int argc, char *argv[])
 
 		mode = GCP_RPC_DAEMON_MODE_SOCKET;
 	}
+
+	fprintf(stderr, "  listen: %s\n", path);
+	fprintf(stderr, "pkcs11-proxy ready\n");
 
 	/*
 	 * Enable seccomp. This is essentially a whitelist containing all the syscalls
