@@ -51,6 +51,11 @@ tasks:
     cmds:
       - dagger call -m .dagger sslscan --src=.
 
+  dagger:trivy:
+    desc: Run Trivy scan via Dagger
+    cmds:
+      - dagger call -m .dagger trivy-scan --src=.
+
   lint:
     desc: Run all linters (ruff fmt + ruff check + ty)
     cmds:

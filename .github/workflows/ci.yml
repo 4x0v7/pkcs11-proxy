@@ -75,10 +75,59 @@ jobs:
           module: .dagger
           args: sslscan --src=.
 
+  trivy:
+    name: Trivy vulnerability scan
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      security-events: write  # required to upload SARIF
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Trivy scan (Dagger, fail on CRITICAL/HIGH)
+        uses: dagger/dagger-for-github@v8.3.0
+        with:
+          version: "latest"
+          verb: call
+          module: .dagger
+          args: trivy-scan --src=.
+
+      - name: Build image for SARIF scan
+        run: docker build -f docker/Dockerfile.server -t pkcs11-proxy:scan .
+
+      - name: Run Trivy (SARIF report)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: 'pkcs11-proxy:scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy (JSON report)
+        uses: aquasecurity/trivy-action@0.33.1
+        if: always()
+        with:
+          image-ref: 'pkcs11-proxy:scan'
+          format: 'json'
+          output: 'trivy-results.json'
+
+      - name: Upload Trivy JSON report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-vulnerability-report
+          path: trivy-results.json
+
   build-and-push:
     name: Build, push & sign image
     runs-on: ubuntu-latest
-    needs: [integration, sslscan]
+    needs: [integration, sslscan, trivy]
     if: github.event_name == 'push'
     permissions:
       contents: read

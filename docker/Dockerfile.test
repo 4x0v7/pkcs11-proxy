@@ -1,7 +1,7 @@
 FROM cgr.dev/chainguard/wolfi-base
 
 # Build + test dependencies
-RUN apk update && apk add --no-cache \
+RUN apk add --no-cache \
     bash \
     build-base \
     cmake \

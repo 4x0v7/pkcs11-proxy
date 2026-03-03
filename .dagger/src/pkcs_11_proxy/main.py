@@ -1,6 +1,8 @@
 import dagger
 from dagger import function, object_type
 
+TRIVY_IMAGE = "aquasec/trivy:latest"
+
 
 @object_type
 class Pkcs11Proxy:
@@ -9,6 +11,10 @@ class Pkcs11Proxy:
     def _build_test_image(self, src: dagger.Directory) -> dagger.Container:
         """Build the test image from docker/Dockerfile.test (layer-cached)."""
         return src.docker_build(dockerfile="docker/Dockerfile.test")
+
+    def _build_server_image(self, src: dagger.Directory) -> dagger.Container:
+        """Build the production server image from docker/Dockerfile.server."""
+        return src.docker_build(dockerfile="docker/Dockerfile.server")
 
     @function(cache="never")
     async def test(self, src: dagger.Directory) -> str:
@@ -92,4 +98,52 @@ class Pkcs11Proxy:
             .with_service_binding("server", daemon)
             .with_exec(["sslscan", "server:2345"])
             .stdout()
+        )
+
+    @function(cache="never")
+    async def trivy_scan(self, src: dagger.Directory) -> str:
+        """Scan the production server image with Trivy for vulnerabilities."""
+        tarball = self._build_server_image(src).as_tarball()
+
+        return await (
+            dagger.dag.container()
+            .from_(TRIVY_IMAGE)
+            .with_mounted_file("/image.tar", tarball)
+            .with_exec(
+                [
+                    "trivy",
+                    "image",
+                    "--input",
+                    "/image.tar",
+                    "--severity",
+                    "CRITICAL,HIGH",
+                    "--exit-code",
+                    "1",
+                ]
+            )
+            .stdout()
+        )
+
+    @function(cache="never")
+    async def trivy_report(self, src: dagger.Directory) -> dagger.File:
+        """Scan the production image and return a JSON vulnerability report."""
+        tarball = self._build_server_image(src).as_tarball()
+
+        return (
+            dagger.dag.container()
+            .from_(TRIVY_IMAGE)
+            .with_mounted_file("/image.tar", tarball)
+            .with_exec(
+                [
+                    "trivy",
+                    "image",
+                    "--input",
+                    "/image.tar",
+                    "--format",
+                    "json",
+                    "--output",
+                    "/report.json",
+                ]
+            )
+            .file("/report.json")
         )
