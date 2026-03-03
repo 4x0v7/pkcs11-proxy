@@ -79,7 +79,7 @@ jobs:
     name: Build, push & sign image
     runs-on: ubuntu-latest
     needs: [integration, sslscan]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -106,8 +106,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,format=long
             type=ref,event=branch
+            type=sha,format=short
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
