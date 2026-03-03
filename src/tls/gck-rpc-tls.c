@@ -361,7 +361,7 @@ gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len)
 int
 gck_rpc_tls_read_all(GckRpcTlsState *state, void *data, unsigned int len)
 {
-	int bytes, error;
+	int bytes, error, ssl_err;
 	char buf[256];
 
 	assert(state);
@@ -371,6 +371,9 @@ gck_rpc_tls_read_all(GckRpcTlsState *state, void *data, unsigned int len)
 	bytes = SSL_read(state->ssl, data, len);
 
 	if (bytes <= 0) {
+		ssl_err = SSL_get_error(state->ssl, bytes);
+		gck_rpc_log("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)",
+			    bytes, ssl_err, len);
 		while ((error = ERR_get_error())) {
 			ERR_error_string_n(error, buf, sizeof(buf));
 			warning(("SSL_read error: %s", buf));

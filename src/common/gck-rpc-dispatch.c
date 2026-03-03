@@ -2022,6 +2022,9 @@ static int dispatch_call(CallState * cs)
 	assert(req->call_id > GCK_RPC_CALL_ERROR);
 	assert(req->call_id < GCK_RPC_CALL_MAX);
 
+	gck_rpc_log("dispatch: >>> %s (call_id=%d, sock=%d)",
+		    gck_rpc_calls[req->call_id].name, req->call_id, cs->sock);
+
 	/* Prepare a response for the function to fill in */
 	if (!gck_rpc_message_prep(resp, req->call_id, GCK_RPC_RESPONSE)) {
 		gck_rpc_warn("couldn't prepare message");
@@ -2125,6 +2128,10 @@ static int dispatch_call(CallState * cs)
 		}
 	}
 
+	gck_rpc_log("dispatch: <<< %s => 0x%lX (%s)",
+		    gck_rpc_calls[req->call_id].name, (unsigned long)ret,
+		    ret == CKR_OK ? "OK" : "ERROR");
+
 	/* A filled in response */
 	if (ret == CKR_OK) {
 
@@ -2171,12 +2178,13 @@ static int read_all(CallState *cs, void *data, size_t len)
 			r = recv(cs->sock, data, len, 0);
 
 		if (r == 0) {
-			/* Connection was closed on client */
+			gck_rpc_log("read_all: EOF from client (sock=%d, remaining=%zu)",
+				    cs->sock, len);
 			return 0;
 		} else if (r == -1) {
 			if (errno != EAGAIN && errno != EINTR) {
-				gck_rpc_warn("couldn't receive data: %s",
-					     strerror(errno));
+				gck_rpc_warn("read_all: error (sock=%d, remaining=%zu): %s",
+					     cs->sock, len, strerror(errno));
 				return 0;
 			}
 		} else {
@@ -2204,11 +2212,12 @@ static int write_all(CallState *cs, void *data, size_t len)
 
 		if (r == -1) {
 			if (errno == EPIPE) {
-				/* Connection closed from client */
+				gck_rpc_log("write_all: EPIPE from client (sock=%d, remaining=%zu)",
+					    cs->sock, len);
 				return 0;
 			} else if (errno != EAGAIN && errno != EINTR) {
-				gck_rpc_warn("couldn't send data: %s",
-					     strerror(errno));
+				gck_rpc_warn("write_all: error (sock=%d, remaining=%zu): %s",
+					     cs->sock, len, strerror(errno));
 				return 0;
 			}
 		} else {
@@ -2260,13 +2269,18 @@ static void run_dispatch_loop(CallState *cs)
 	}
 
 	/* The main thread loop */
+	gck_rpc_log("dispatch-loop: start (sock=%d, client %s:%s)",
+		    cs->sock, hoststr, portstr);
+
 	while (TRUE) {
 
 		call_reset(cs);
 
 		/* Read the number of bytes ... */
-		if (! cs->read(cs, buf, 4))
+		if (! cs->read(cs, buf, 4)) {
+			gck_rpc_log("dispatch-loop: client disconnected (read header failed, sock=%d)", cs->sock);
 			break;
+		}
 
 		/* Calculate the number of bytes */
 		len = egg_buffer_decode_uint32(buf);
@@ -2284,25 +2298,35 @@ static void run_dispatch_loop(CallState *cs)
 		}
 
 		/* ... and read/parse in the actual message */
-		if (!cs->read(cs, cs->req->buffer.buf, len))
+		if (!cs->read(cs, cs->req->buffer.buf, len)) {
+			gck_rpc_log("dispatch-loop: client disconnected (read body failed, sock=%d, expected %u bytes)", cs->sock, len);
 			break;
+		}
 
 		egg_buffer_add_empty(&cs->req->buffer, len);
 
-		if (!gck_rpc_message_parse(cs->req, GCK_RPC_REQUEST))
+		if (!gck_rpc_message_parse(cs->req, GCK_RPC_REQUEST)) {
+			gck_rpc_warn("dispatch-loop: message parse failed (sock=%d)", cs->sock);
 			break;
+		}
 
 		/* ... send for processing ... */
-		if (!dispatch_call(cs))
+		if (!dispatch_call(cs)) {
+			gck_rpc_warn("dispatch-loop: dispatch_call failed (sock=%d)", cs->sock);
 			break;
+		}
 
 		/* .. send back response length, and then response data */
 		egg_buffer_encode_uint32(buf, cs->resp->buffer.len);
 		if (!cs->write(cs, buf, 4) ||
-		    !cs->write(cs, cs->resp->buffer.buf, cs->resp->buffer.len))
+		    !cs->write(cs, cs->resp->buffer.buf, cs->resp->buffer.len)) {
+			gck_rpc_log("dispatch-loop: write response failed (sock=%d)", cs->sock);
 			break;
+		}
 	}
 
+	gck_rpc_log("dispatch-loop: end (sock=%d, client %s:%s) — cleaning up sessions",
+		    cs->sock, hoststr, portstr);
 	call_uninit(cs);
 }
 
