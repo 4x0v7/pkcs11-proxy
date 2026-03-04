@@ -339,11 +339,11 @@ main(int argc, char *argv[])
 			fprintf(stderr, "TLS initialization failed\n");
 			exit(1);
 		}
-		fprintf(stderr, "  tls:    TLS 1.3 server initialized (mTLS=%s)\n",
-		        getenv("PKCS11_PROXY_TLS_REQUIRE_MTLS")
-		                && strcmp(getenv("PKCS11_PROXY_TLS_REQUIRE_MTLS"), "true") == 0
-		            ? "required"
-		            : "off");
+		{
+			const char *mtls_env = getenv("PKCS11_PROXY_TLS_REQUIRE_MTLS");
+			fprintf(stderr, "  tls:    TLS 1.3 server initialized (mTLS=%s)\n",
+			        mtls_env && strcmp(mtls_env, "true") == 0 ? "required" : "off");
+		}
 	}
 
 	if (strcmp(path, "-") == 0) {

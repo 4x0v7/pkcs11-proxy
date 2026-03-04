@@ -39,9 +39,9 @@ _policy_warn(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	fprintf(stderr, "policy: ");
-	vfprintf(stderr, fmt, ap);
-	fprintf(stderr, "\n");
+	(void)fprintf(stderr, "policy: ");
+	(void)vfprintf(stderr, fmt, ap);
+	(void)fprintf(stderr, "\n");
 	va_end(ap);
 }
 
@@ -95,8 +95,9 @@ policy_extract_json(X509 *cert, int *out_len)
 	int tag, xclass;
 	char *json;
 
-	if (out_len)
+	if (out_len) {
 		*out_len = 0;
+	}
 
 	oid = OBJ_txt2obj(PKCS11_PROXY_POLICY_OID, 1);
 	if (!oid) {
@@ -113,12 +114,14 @@ policy_extract_json(X509 *cert, int *out_len)
 	}
 
 	ext = X509_get_ext(cert, ext_idx);
-	if (!ext)
+	if (!ext) {
 		return NULL;
+	}
 
 	ext_data = X509_EXTENSION_get_data(ext);
-	if (!ext_data || ext_data->length <= 0)
+	if (!ext_data || ext_data->length <= 0) {
 		return NULL;
+	}
 
 	/* Decode the UTF8String inside the OCTET STRING */
 	p = ext_data->data;
@@ -141,14 +144,16 @@ policy_extract_json(X509 *cert, int *out_len)
 	}
 
 	json = malloc(len + 1);
-	if (!json)
+	if (!json) {
 		return NULL;
+	}
 
 	memcpy(json, p, len);
 	json[len] = '\0';
 
-	if (out_len)
+	if (out_len) {
 		*out_len = (int)len;
+	}
 
 	debug(("Extracted OID policy JSON (%ld bytes)", len));
 	return json;
@@ -210,11 +215,13 @@ policy_validate_server(const char *json, int json_len, const char *expected_serv
 	cJSON *root;
 	PolicyResult r;
 
-	if (!json || json_len <= 0)
+	if (!json || json_len <= 0) {
 		return POLICY_ERR_INVALID_JSON;
+	}
 
-	if (json_len > PKCS11_PROXY_POLICY_MAX_SIZE)
+	if (json_len > PKCS11_PROXY_POLICY_MAX_SIZE) {
 		return POLICY_ERR_OVERSIZED;
+	}
 
 	root = cJSON_ParseWithLength(json, json_len);
 	if (!root) {
@@ -224,20 +231,24 @@ policy_validate_server(const char *json, int json_len, const char *expected_serv
 
 	/* Server policy expected fields: v, service, namespace, keyset (4 fields) */
 	r = _check_version(root);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "service", expected_service);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "namespace", expected_namespace);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "keyset", expected_keyset);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	if (_count_fields(root) != 4) {
 		warning(("policy: server policy has %d fields, expected 4", _count_fields(root)));
@@ -259,11 +270,13 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 	cJSON *root;
 	PolicyResult r;
 
-	if (!json || json_len <= 0)
+	if (!json || json_len <= 0) {
 		return POLICY_ERR_INVALID_JSON;
+	}
 
-	if (json_len > PKCS11_PROXY_POLICY_MAX_SIZE)
+	if (json_len > PKCS11_PROXY_POLICY_MAX_SIZE) {
 		return POLICY_ERR_OVERSIZED;
+	}
 
 	root = cJSON_ParseWithLength(json, json_len);
 	if (!root) {
@@ -273,32 +286,39 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 
 	/* Client policy expected fields: v, iss, repo, workflow, ref, aud, keyset (7 fields) */
 	r = _check_version(root);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "iss", NULL);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "repo", expected_repo);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "workflow", NULL);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "ref", NULL);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "aud", NULL);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	r = _check_string_field(root, "keyset", expected_keyset);
-	if (r != POLICY_OK)
+	if (r != POLICY_OK) {
 		goto done;
+	}
 
 	if (_count_fields(root) != 7) {
 		warning(("policy: client policy has %d fields, expected 7", _count_fields(root)));

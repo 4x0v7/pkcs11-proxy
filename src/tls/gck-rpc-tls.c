@@ -221,6 +221,7 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 		int ssl_err = SSL_get_error(state->ssl, res);
 		ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
 		debug(("TLS handshake failed: %i/%i (%s)", res, ssl_err, buf));
+		(void)ssl_err; /* used by debug() macro when DEBUG_OUTPUT=1 */
 		return 0;
 	}
 
@@ -423,6 +424,7 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 		/* Health probes cause SSL_ERROR_SYSCALL / SSL_ERROR_ZERO_RETURN —
 		 * downgrade to debug to avoid log noise. */
 		debug(("TLS handshake failed: %i/%i (%s)", res, ssl_err, buf));
+		(void)ssl_err; /* used by debug() macro when DEBUG_OUTPUT=1 */
 		SSL_free(ssl); /* also frees bio */
 		return 0;
 	}
@@ -566,14 +568,15 @@ gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len)
 int
 gck_rpc_tls_write_all_conn(SSL *ssl, void *data, unsigned int len)
 {
-	int bytes, error;
+	int bytes;
+	unsigned long error;
 	char buf[256];
 
 	assert(ssl);
 	assert(data);
 	assert(len > 0);
 
-	bytes = SSL_write(ssl, data, len);
+	bytes = SSL_write(ssl, data, (int)len);
 
 	if (bytes <= 0) {
 		while ((error = ERR_get_error())) {
@@ -599,19 +602,21 @@ gck_rpc_tls_read_all(GckRpcTlsState *state, void *data, unsigned int len)
 int
 gck_rpc_tls_read_all_conn(SSL *ssl, void *data, unsigned int len)
 {
-	int bytes, error, ssl_err;
+	int bytes, ssl_err;
+	unsigned long error;
 	char buf[256];
 
 	assert(ssl);
 	assert(data);
 	assert(len > 0);
 
-	bytes = SSL_read(ssl, data, len);
+	bytes = SSL_read(ssl, data, (int)len);
 
 	if (bytes <= 0) {
 		ssl_err = SSL_get_error(ssl, bytes);
 		debug(("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)", bytes,
 		       ssl_err, len));
+		(void)ssl_err; /* used by debug() macro when DEBUG_OUTPUT=1 */
 		while ((error = ERR_get_error())) {
 			ERR_error_string_n(error, buf, sizeof(buf));
 			debug(("SSL_read error: %s", buf));
