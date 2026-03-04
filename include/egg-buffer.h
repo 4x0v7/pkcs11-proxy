@@ -24,8 +24,8 @@
 #ifndef EGG_BUFFER_H
 #define EGG_BUFFER_H
 
-#include <stdlib.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 /* -------------------------------------------------------------------
  * EggBuffer
@@ -55,7 +55,7 @@
  */
 
 /* The allocator for the EggBuffer. This follows the realloc() syntax and logic */
-typedef void* (*EggBufferAllocator) (void* p, size_t len);
+typedef void *(*EggBufferAllocator)(void *p, size_t len);
 
 typedef struct _EggBuffer {
 	unsigned char *buf;
@@ -65,130 +65,80 @@ typedef struct _EggBuffer {
 	EggBufferAllocator allocator;
 } EggBuffer;
 
-#define 	EGG_BUFFER_EMPTY		{ NULL, 0, 0, 0, NULL }
+#define EGG_BUFFER_EMPTY { NULL, 0, 0, 0, NULL }
 
-int             egg_buffer_init                 (EggBuffer *buffer, size_t reserve);
+int egg_buffer_init(EggBuffer *buffer, size_t reserve);
 
-int             egg_buffer_init_full            (EggBuffer *buffer,
-                                                 size_t reserve,
-                                                 EggBufferAllocator allocator);
+int egg_buffer_init_full(EggBuffer *buffer, size_t reserve, EggBufferAllocator allocator);
 
-void            egg_buffer_init_static          (EggBuffer *buffer,
-                                                 unsigned char *buf,
-                                                 size_t len);
+void egg_buffer_init_static(EggBuffer *buffer, unsigned char *buf, size_t len);
 
-void            egg_buffer_init_allocated       (EggBuffer *buffer,
-                                                 unsigned char *buf,
-                                                 size_t len,
-                                                 EggBufferAllocator allocator);
+void egg_buffer_init_allocated(EggBuffer *buffer, unsigned char *buf, size_t len,
+                               EggBufferAllocator allocator);
 
-void            egg_buffer_uninit               (EggBuffer *buffer);
+void egg_buffer_uninit(EggBuffer *buffer);
 
-int             egg_buffer_set_allocator        (EggBuffer *buffer,
-                                                 EggBufferAllocator allocator);
+int egg_buffer_set_allocator(EggBuffer *buffer, EggBufferAllocator allocator);
 
-void 		egg_buffer_reset		(EggBuffer *buffer);
+void egg_buffer_reset(EggBuffer *buffer);
 
-int		egg_buffer_equal		(EggBuffer *b1,
-						 EggBuffer *b2);
+int egg_buffer_equal(EggBuffer *b1, EggBuffer *b2);
 
-int             egg_buffer_reserve              (EggBuffer *buffer,
-                                                 size_t len);
+int egg_buffer_reserve(EggBuffer *buffer, size_t len);
 
-int             egg_buffer_resize               (EggBuffer *buffer,
-                                                 size_t len);
+int egg_buffer_resize(EggBuffer *buffer, size_t len);
 
-int		egg_buffer_append 		(EggBuffer *buffer,
-						 const unsigned char *val,
-						 size_t len);
+int egg_buffer_append(EggBuffer *buffer, const unsigned char *val, size_t len);
 
-unsigned char*  egg_buffer_add_empty            (EggBuffer *buffer,
-                                                 size_t len);
+unsigned char *egg_buffer_add_empty(EggBuffer *buffer, size_t len);
 
-int 		egg_buffer_add_byte		(EggBuffer *buffer,
-						 unsigned char val);
+int egg_buffer_add_byte(EggBuffer *buffer, unsigned char val);
 
-int 		egg_buffer_get_byte		(EggBuffer *buffer,
-						 size_t offset,
-						 size_t *next_offset,
-						 unsigned char *val);
+int egg_buffer_get_byte(EggBuffer *buffer, size_t offset, size_t *next_offset, unsigned char *val);
 
-void 		egg_buffer_encode_uint32	(unsigned char* buf,
-						 uint32_t val);
+void egg_buffer_encode_uint32(unsigned char *buf, uint32_t val);
 
-uint32_t	egg_buffer_decode_uint32	(unsigned char* buf);
+uint32_t egg_buffer_decode_uint32(unsigned char *buf);
 
-int 		egg_buffer_add_uint32		(EggBuffer *buffer,
-						 uint32_t val);
+int egg_buffer_add_uint32(EggBuffer *buffer, uint32_t val);
 
-int		egg_buffer_set_uint32		(EggBuffer *buffer,
-						 size_t offset,
-						 uint32_t val);
+int egg_buffer_set_uint32(EggBuffer *buffer, size_t offset, uint32_t val);
 
-int		egg_buffer_get_uint32		(EggBuffer *buffer,
-						 size_t offset,
-						 size_t *next_offset,
-						 uint32_t *val);
+int egg_buffer_get_uint32(EggBuffer *buffer, size_t offset, size_t *next_offset, uint32_t *val);
 
-void 		egg_buffer_encode_uint16	(unsigned char* buf,
-						 uint16_t val);
+void egg_buffer_encode_uint16(unsigned char *buf, uint16_t val);
 
-uint16_t	egg_buffer_decode_uint16	(unsigned char* buf);
+uint16_t egg_buffer_decode_uint16(unsigned char *buf);
 
-int 		egg_buffer_add_uint16		(EggBuffer *buffer,
-						 uint16_t val);
+int egg_buffer_add_uint16(EggBuffer *buffer, uint16_t val);
 
-int		egg_buffer_set_uint16		(EggBuffer *buffer,
-						 size_t offset,
-						 uint16_t val);
+int egg_buffer_set_uint16(EggBuffer *buffer, size_t offset, uint16_t val);
 
-int		egg_buffer_get_uint16		(EggBuffer *buffer,
-						 size_t offset,
-						 size_t *next_offset,
-						 uint16_t *val);
+int egg_buffer_get_uint16(EggBuffer *buffer, size_t offset, size_t *next_offset, uint16_t *val);
 
-int		egg_buffer_add_byte_array	(EggBuffer *buffer,
-						 const unsigned char *val,
-						 size_t len);
+int egg_buffer_add_byte_array(EggBuffer *buffer, const unsigned char *val, size_t len);
 
-int		egg_buffer_get_byte_array	(EggBuffer *buffer,
-						 size_t offset,
-						 size_t *next_offset,
-						 const unsigned char **val,
-						 size_t *vlen);
+int egg_buffer_get_byte_array(EggBuffer *buffer, size_t offset, size_t *next_offset,
+                              const unsigned char **val, size_t *vlen);
 
-unsigned char*  egg_buffer_add_byte_array_empty (EggBuffer *buffer,
-                                                 size_t vlen);
+unsigned char *egg_buffer_add_byte_array_empty(EggBuffer *buffer, size_t vlen);
 
-int             egg_buffer_add_string           (EggBuffer *buffer,
-                                                 const char *str);
+int egg_buffer_add_string(EggBuffer *buffer, const char *str);
 
-int             egg_buffer_get_string           (EggBuffer *buffer,
-                                                 size_t offset,
-                                                 size_t *next_offset,
-                                                 char **str_ret,
-                                                 EggBufferAllocator allocator);
+int egg_buffer_get_string(EggBuffer *buffer, size_t offset, size_t *next_offset, char **str_ret,
+                          EggBufferAllocator allocator);
 
-int             egg_buffer_add_stringv          (EggBuffer *buffer,
-                                                 const char** strv);
+int egg_buffer_add_stringv(EggBuffer *buffer, const char **strv);
 
-int             egg_buffer_get_stringv          (EggBuffer *buffer,
-                                                 size_t offset,
-                                                 size_t *next_offset,
-                                                 char ***strv_ret,
-                                                 EggBufferAllocator allocator);
+int egg_buffer_get_stringv(EggBuffer *buffer, size_t offset, size_t *next_offset, char ***strv_ret,
+                           EggBufferAllocator allocator);
 
-int		egg_buffer_add_uint64		(EggBuffer *buffer,
-						 uint64_t val);
+int egg_buffer_add_uint64(EggBuffer *buffer, uint64_t val);
 
-int		egg_buffer_get_uint64		(EggBuffer *buffer,
-						 size_t offset,
-						 size_t *next_offset,
-						 uint64_t *val);
+int egg_buffer_get_uint64(EggBuffer *buffer, size_t offset, size_t *next_offset, uint64_t *val);
 
-#define		egg_buffer_length(b)		((b)->len)
+#define egg_buffer_length(b) ((b)->len)
 
-#define 	egg_buffer_has_error(b)		((b)->failures > 0)
+#define egg_buffer_has_error(b) ((b)->failures > 0)
 
 #endif /* EGG_BUFFER_H */
-

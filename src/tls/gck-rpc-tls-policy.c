@@ -14,27 +14,29 @@
    Library General Public License for more details.
 */
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "gck-rpc-tls-policy.h"
 #include "ext/cjson/cJSON.h"
+#include "gck-rpc-tls-policy.h"
 
-#include <openssl/x509v3.h>
 #include <openssl/asn1.h>
 #include <openssl/obj_mac.h>
+#include <openssl/x509v3.h>
 
 /* -----------------------------------------------------------------------------
  * LOGGING
  */
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 #ifndef DEBUG_OUTPUT
 #define DEBUG_OUTPUT 0
 #endif
 
-static void _policy_warn(const char *fmt, ...) {
+static void
+_policy_warn(const char *fmt, ...)
+{
 	va_list ap;
 	va_start(ap, fmt);
 	fprintf(stderr, "policy: ");
@@ -50,23 +52,29 @@ static void _policy_warn(const char *fmt, ...) {
 #endif
 #define warning(x) _policy_warn x
 
-
 const char *
 policy_result_str(PolicyResult r)
 {
 	switch (r) {
-	case POLICY_OK:              return "OK";
-	case POLICY_ERR_NO_EXTENSION: return "OID extension not found";
-	case POLICY_ERR_ASN1_DECODE: return "ASN.1 decode failed";
-	case POLICY_ERR_OVERSIZED:   return "policy JSON exceeds max size";
-	case POLICY_ERR_INVALID_JSON: return "invalid JSON";
-	case POLICY_ERR_MISSING_FIELD: return "required field missing";
-	case POLICY_ERR_WRONG_VALUE: return "field value mismatch";
-	case POLICY_ERR_EXTRA_FIELDS: return "unexpected extra fields";
+	case POLICY_OK:
+		return "OK";
+	case POLICY_ERR_NO_EXTENSION:
+		return "OID extension not found";
+	case POLICY_ERR_ASN1_DECODE:
+		return "ASN.1 decode failed";
+	case POLICY_ERR_OVERSIZED:
+		return "policy JSON exceeds max size";
+	case POLICY_ERR_INVALID_JSON:
+		return "invalid JSON";
+	case POLICY_ERR_MISSING_FIELD:
+		return "required field missing";
+	case POLICY_ERR_WRONG_VALUE:
+		return "field value mismatch";
+	case POLICY_ERR_EXTRA_FIELDS:
+		return "unexpected extra fields";
 	}
 	return "unknown error";
 }
-
 
 /* Extract the raw JSON string from the SIGNEDGIT OID extension.
  *
@@ -146,7 +154,6 @@ policy_extract_json(X509 *cert, int *out_len)
 	return json;
 }
 
-
 /* Helper: check a required string field in a cJSON object.
  * If expected is non-NULL, also checks the value matches.
  * Returns POLICY_OK, POLICY_ERR_MISSING_FIELD, or POLICY_ERR_WRONG_VALUE.
@@ -160,8 +167,8 @@ _check_string_field(const cJSON *root, const char *field, const char *expected)
 		return POLICY_ERR_MISSING_FIELD;
 	}
 	if (expected && strcmp(item->valuestring, expected) != 0) {
-		warning(("policy: field '%s' = '%s', expected '%s'",
-			 field, item->valuestring, expected));
+		warning(("policy: field '%s' = '%s', expected '%s'", field, item->valuestring,
+		         expected));
 		return POLICY_ERR_WRONG_VALUE;
 	}
 	return POLICY_OK;
@@ -189,17 +196,16 @@ _count_fields(const cJSON *root)
 {
 	int count = 0;
 	const cJSON *item;
-	cJSON_ArrayForEach(item, root) {
+	cJSON_ArrayForEach(item, root)
+	{
 		count++;
 	}
 	return count;
 }
 
-
 PolicyResult
-policy_validate_server(const char *json, int json_len,
-	const char *expected_service, const char *expected_namespace,
-	const char *expected_keyset)
+policy_validate_server(const char *json, int json_len, const char *expected_service,
+                       const char *expected_namespace, const char *expected_keyset)
 {
 	cJSON *root;
 	PolicyResult r;
@@ -218,16 +224,20 @@ policy_validate_server(const char *json, int json_len,
 
 	/* Server policy expected fields: v, service, namespace, keyset (4 fields) */
 	r = _check_version(root);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "service", expected_service);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "namespace", expected_namespace);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "keyset", expected_keyset);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	if (_count_fields(root) != 4) {
 		warning(("policy: server policy has %d fields, expected 4", _count_fields(root)));
@@ -242,10 +252,9 @@ done:
 	return r;
 }
 
-
 PolicyResult
-policy_validate_client(const char *json, int json_len,
-	const char *expected_repo, const char *expected_keyset)
+policy_validate_client(const char *json, int json_len, const char *expected_repo,
+                       const char *expected_keyset)
 {
 	cJSON *root;
 	PolicyResult r;
@@ -264,25 +273,32 @@ policy_validate_client(const char *json, int json_len,
 
 	/* Client policy expected fields: v, iss, repo, workflow, ref, aud, keyset (7 fields) */
 	r = _check_version(root);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "iss", NULL);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "repo", expected_repo);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "workflow", NULL);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "ref", NULL);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "aud", NULL);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	r = _check_string_field(root, "keyset", expected_keyset);
-	if (r != POLICY_OK) goto done;
+	if (r != POLICY_OK)
+		goto done;
 
 	if (_count_fields(root) != 7) {
 		warning(("policy: client policy has %d fields, expected 7", _count_fields(root)));

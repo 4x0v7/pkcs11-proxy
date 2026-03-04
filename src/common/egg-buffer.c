@@ -22,21 +22,21 @@
 */
 #include "config.h"
 
-#include <string.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include "egg-buffer.h"
 
-#define DEFAULT_ALLOCATOR  ((EggBufferAllocator)realloc)
+#define DEFAULT_ALLOCATOR ((EggBufferAllocator)realloc)
 
-int egg_buffer_init(EggBuffer * buffer, size_t reserve)
+int
+egg_buffer_init(EggBuffer *buffer, size_t reserve)
 {
 	return egg_buffer_init_full(buffer, reserve, NULL);
 }
 
 int
-egg_buffer_init_full(EggBuffer * buffer, size_t reserve,
-		     EggBufferAllocator allocator)
+egg_buffer_init_full(EggBuffer *buffer, size_t reserve, EggBufferAllocator allocator)
 {
 	memset(buffer, 0, sizeof(*buffer));
 
@@ -45,7 +45,7 @@ egg_buffer_init_full(EggBuffer * buffer, size_t reserve,
 	if (reserve == 0)
 		reserve = 64;
 
-	buffer->buf = (allocator) (NULL, reserve);
+	buffer->buf = (allocator)(NULL, reserve);
 	if (!buffer->buf) {
 		buffer->failures++;
 		return 0;
@@ -59,7 +59,8 @@ egg_buffer_init_full(EggBuffer * buffer, size_t reserve,
 	return 1;
 }
 
-void egg_buffer_init_static(EggBuffer * buffer, unsigned char *buf, size_t len)
+void
+egg_buffer_init_static(EggBuffer *buffer, unsigned char *buf, size_t len)
 {
 	memset(buffer, 0, sizeof(*buffer));
 
@@ -73,8 +74,8 @@ void egg_buffer_init_static(EggBuffer * buffer, unsigned char *buf, size_t len)
 }
 
 void
-egg_buffer_init_allocated(EggBuffer * buffer, unsigned char *buf, size_t len,
-			  EggBufferAllocator allocator)
+egg_buffer_init_allocated(EggBuffer *buffer, unsigned char *buf, size_t len,
+                          EggBufferAllocator allocator)
 {
 	memset(buffer, 0, sizeof(*buffer));
 
@@ -88,14 +89,16 @@ egg_buffer_init_allocated(EggBuffer * buffer, unsigned char *buf, size_t len,
 	buffer->allocator = allocator;
 }
 
-void egg_buffer_reset(EggBuffer * buffer)
+void
+egg_buffer_reset(EggBuffer *buffer)
 {
 	memset(buffer->buf, 0, buffer->allocated_len);
 	buffer->len = 0;
 	buffer->failures = 0;
 }
 
-void egg_buffer_uninit(EggBuffer * buffer)
+void
+egg_buffer_uninit(EggBuffer *buffer)
 {
 	if (!buffer)
 		return;
@@ -105,12 +108,13 @@ void egg_buffer_uninit(EggBuffer * buffer)
 	 * then this memory is ownerd elsewhere and not to be freed.
 	 */
 	if (buffer->buf && buffer->allocator)
-		(buffer->allocator) (buffer->buf, 0);
+		(buffer->allocator)(buffer->buf, 0);
 
 	memset(buffer, 0, sizeof(*buffer));
 }
 
-int egg_buffer_set_allocator(EggBuffer * buffer, EggBufferAllocator allocator)
+int
+egg_buffer_set_allocator(EggBuffer *buffer, EggBufferAllocator allocator)
 {
 	unsigned char *buf = NULL;
 
@@ -121,7 +125,7 @@ int egg_buffer_set_allocator(EggBuffer * buffer, EggBufferAllocator allocator)
 
 	if (buffer->allocated_len) {
 		/* Reallocate memory block using new allocator */
-		buf = (allocator) (NULL, buffer->allocated_len);
+		buf = (allocator)(NULL, buffer->allocated_len);
 		if (buf == NULL)
 			return 0;
 
@@ -131,7 +135,7 @@ int egg_buffer_set_allocator(EggBuffer * buffer, EggBufferAllocator allocator)
 
 	/* If old wasn't static, then free it */
 	if (buffer->allocator && buffer->buf)
-		(buffer->allocator) (buffer->buf, 0);
+		(buffer->allocator)(buffer->buf, 0);
 
 	buffer->buf = buf;
 	buffer->allocator = allocator;
@@ -139,14 +143,16 @@ int egg_buffer_set_allocator(EggBuffer * buffer, EggBufferAllocator allocator)
 	return 1;
 }
 
-int egg_buffer_equal(EggBuffer * b1, EggBuffer * b2)
+int
+egg_buffer_equal(EggBuffer *b1, EggBuffer *b2)
 {
 	if (b1->len != b2->len)
 		return 0;
 	return memcmp(b1->buf, b2->buf, b1->len) == 0;
 }
 
-int egg_buffer_reserve(EggBuffer * buffer, size_t len)
+int
+egg_buffer_reserve(EggBuffer *buffer, size_t len)
 {
 	unsigned char *newbuf;
 	size_t newlen;
@@ -166,7 +172,7 @@ int egg_buffer_reserve(EggBuffer * buffer, size_t len)
 	}
 
 	/* Reallocate built in buffer using allocator */
-	newbuf = (buffer->allocator) (buffer->buf, newlen);
+	newbuf = (buffer->allocator)(buffer->buf, newlen);
 	if (!newbuf) {
 		buffer->failures++;
 		return 0;
@@ -178,7 +184,8 @@ int egg_buffer_reserve(EggBuffer * buffer, size_t len)
 	return 1;
 }
 
-int egg_buffer_resize(EggBuffer * buffer, size_t len)
+int
+egg_buffer_resize(EggBuffer *buffer, size_t len)
 {
 	if (!egg_buffer_reserve(buffer, len))
 		return 0;
@@ -187,7 +194,8 @@ int egg_buffer_resize(EggBuffer * buffer, size_t len)
 	return 1;
 }
 
-unsigned char *egg_buffer_add_empty(EggBuffer * buffer, size_t len)
+unsigned char *
+egg_buffer_add_empty(EggBuffer *buffer, size_t len)
 {
 	size_t pos = buffer->len;
 	if (!egg_buffer_reserve(buffer, buffer->len + len))
@@ -196,27 +204,28 @@ unsigned char *egg_buffer_add_empty(EggBuffer * buffer, size_t len)
 	return buffer->buf + pos;
 }
 
-int egg_buffer_append(EggBuffer * buffer, const unsigned char *val, size_t len)
+int
+egg_buffer_append(EggBuffer *buffer, const unsigned char *val, size_t len)
 {
 	if (!egg_buffer_reserve(buffer, buffer->len + len))
-		return 0;	/* failures already incremented */
+		return 0; /* failures already incremented */
 	memcpy(buffer->buf + buffer->len, val, len);
 	buffer->len += len;
 	return 1;
 }
 
-int egg_buffer_add_byte(EggBuffer * buffer, unsigned char val)
+int
+egg_buffer_add_byte(EggBuffer *buffer, unsigned char val)
 {
 	if (!egg_buffer_reserve(buffer, buffer->len + 1))
-		return 0;	/* failures already incremented */
+		return 0; /* failures already incremented */
 	buffer->buf[buffer->len] = val;
 	buffer->len++;
 	return 1;
 }
 
 int
-egg_buffer_get_byte(EggBuffer * buffer, size_t offset,
-		    size_t * next_offset, unsigned char *val)
+egg_buffer_get_byte(EggBuffer *buffer, size_t offset, size_t *next_offset, unsigned char *val)
 {
 	unsigned char *ptr;
 	if (buffer->len < 1 || offset > buffer->len - 1) {
@@ -231,28 +240,32 @@ egg_buffer_get_byte(EggBuffer * buffer, size_t offset,
 	return 1;
 }
 
-void egg_buffer_encode_uint16(unsigned char *buf, uint16_t val)
+void
+egg_buffer_encode_uint16(unsigned char *buf, uint16_t val)
 {
 	buf[0] = (val >> 8) & 0xff;
 	buf[1] = (val >> 0) & 0xff;
 }
 
-uint16_t egg_buffer_decode_uint16(unsigned char *buf)
+uint16_t
+egg_buffer_decode_uint16(unsigned char *buf)
 {
 	uint16_t val = buf[0] << 8 | buf[1];
 	return val;
 }
 
-int egg_buffer_add_uint16(EggBuffer * buffer, uint16_t val)
+int
+egg_buffer_add_uint16(EggBuffer *buffer, uint16_t val)
 {
 	if (!egg_buffer_reserve(buffer, buffer->len + 2))
-		return 0;	/* failures already incremented */
+		return 0; /* failures already incremented */
 	buffer->len += 2;
 	egg_buffer_set_uint16(buffer, buffer->len - 2, val);
 	return 1;
 }
 
-int egg_buffer_set_uint16(EggBuffer * buffer, size_t offset, uint16_t val)
+int
+egg_buffer_set_uint16(EggBuffer *buffer, size_t offset, uint16_t val)
 {
 	unsigned char *ptr;
 	if (buffer->len < 2 || offset > buffer->len - 2) {
@@ -265,8 +278,7 @@ int egg_buffer_set_uint16(EggBuffer * buffer, size_t offset, uint16_t val)
 }
 
 int
-egg_buffer_get_uint16(EggBuffer * buffer, size_t offset,
-		      size_t * next_offset, uint16_t * val)
+egg_buffer_get_uint16(EggBuffer *buffer, size_t offset, size_t *next_offset, uint16_t *val)
 {
 	unsigned char *ptr;
 	if (buffer->len < 2 || offset > buffer->len - 2) {
@@ -281,7 +293,8 @@ egg_buffer_get_uint16(EggBuffer * buffer, size_t offset,
 	return 1;
 }
 
-void egg_buffer_encode_uint32(unsigned char *buf, uint32_t val)
+void
+egg_buffer_encode_uint32(unsigned char *buf, uint32_t val)
 {
 	buf[0] = (val >> 24) & 0xff;
 	buf[1] = (val >> 16) & 0xff;
@@ -289,22 +302,25 @@ void egg_buffer_encode_uint32(unsigned char *buf, uint32_t val)
 	buf[3] = (val >> 0) & 0xff;
 }
 
-uint32_t egg_buffer_decode_uint32(unsigned char *ptr)
+uint32_t
+egg_buffer_decode_uint32(unsigned char *ptr)
 {
 	uint32_t val = ptr[0] << 24 | ptr[1] << 16 | ptr[2] << 8 | ptr[3];
 	return val;
 }
 
-int egg_buffer_add_uint32(EggBuffer * buffer, uint32_t val)
+int
+egg_buffer_add_uint32(EggBuffer *buffer, uint32_t val)
 {
 	if (!egg_buffer_reserve(buffer, buffer->len + 4))
-		return 0;	/* failures already incremented */
+		return 0; /* failures already incremented */
 	buffer->len += 4;
 	egg_buffer_set_uint32(buffer, buffer->len - 4, val);
 	return 1;
 }
 
-int egg_buffer_set_uint32(EggBuffer * buffer, size_t offset, uint32_t val)
+int
+egg_buffer_set_uint32(EggBuffer *buffer, size_t offset, uint32_t val)
 {
 	unsigned char *ptr;
 	if (buffer->len < 4 || offset > buffer->len - 4) {
@@ -317,8 +333,7 @@ int egg_buffer_set_uint32(EggBuffer * buffer, size_t offset, uint32_t val)
 }
 
 int
-egg_buffer_get_uint32(EggBuffer * buffer, size_t offset, size_t * next_offset,
-		      uint32_t * val)
+egg_buffer_get_uint32(EggBuffer *buffer, size_t offset, size_t *next_offset, uint32_t *val)
 {
 	unsigned char *ptr;
 	if (buffer->len < 4 || offset > buffer->len - 4) {
@@ -333,7 +348,8 @@ egg_buffer_get_uint32(EggBuffer * buffer, size_t offset, size_t * next_offset,
 	return 1;
 }
 
-int egg_buffer_add_uint64(EggBuffer * buffer, uint64_t val)
+int
+egg_buffer_add_uint64(EggBuffer *buffer, uint64_t val)
 {
 	if (!egg_buffer_add_uint32(buffer, ((val >> 32) & 0xffffffff)))
 		return 0;
@@ -341,8 +357,7 @@ int egg_buffer_add_uint64(EggBuffer * buffer, uint64_t val)
 }
 
 int
-egg_buffer_get_uint64(EggBuffer * buffer, size_t offset,
-		      size_t * next_offset, uint64_t * val)
+egg_buffer_get_uint64(EggBuffer *buffer, size_t offset, size_t *next_offset, uint64_t *val)
 {
 	uint32_t a, b;
 	if (!egg_buffer_get_uint32(buffer, offset, &offset, &a))
@@ -350,15 +365,14 @@ egg_buffer_get_uint64(EggBuffer * buffer, size_t offset,
 	if (!egg_buffer_get_uint32(buffer, offset, &offset, &b))
 		return 0;
 	if (val != NULL)
-		*val = ((uint64_t) a) << 32 | b;
+		*val = ((uint64_t)a) << 32 | b;
 	if (next_offset != NULL)
 		*next_offset = offset;
 	return 1;
 }
 
 int
-egg_buffer_add_byte_array(EggBuffer * buffer, const unsigned char *val,
-			  size_t len)
+egg_buffer_add_byte_array(EggBuffer *buffer, const unsigned char *val, size_t len)
 {
 	if (val == NULL)
 		return egg_buffer_add_uint32(buffer, 0xffffffff);
@@ -371,7 +385,8 @@ egg_buffer_add_byte_array(EggBuffer * buffer, const unsigned char *val,
 	return egg_buffer_append(buffer, val, len);
 }
 
-unsigned char *egg_buffer_add_byte_array_empty(EggBuffer * buffer, size_t vlen)
+unsigned char *
+egg_buffer_add_byte_array_empty(EggBuffer *buffer, size_t vlen)
 {
 	if (vlen >= 0x7fffffff) {
 		buffer->failures++;
@@ -383,9 +398,8 @@ unsigned char *egg_buffer_add_byte_array_empty(EggBuffer * buffer, size_t vlen)
 }
 
 int
-egg_buffer_get_byte_array(EggBuffer * buffer, size_t offset,
-			  size_t * next_offset, const unsigned char **val,
-			  size_t * vlen)
+egg_buffer_get_byte_array(EggBuffer *buffer, size_t offset, size_t *next_offset,
+                          const unsigned char **val, size_t *vlen)
 {
 	uint32_t len;
 	if (!egg_buffer_get_uint32(buffer, offset, &offset, &len))
@@ -418,7 +432,8 @@ egg_buffer_get_byte_array(EggBuffer * buffer, size_t offset,
 	return 1;
 }
 
-int egg_buffer_add_string(EggBuffer * buffer, const char *str)
+int
+egg_buffer_add_string(EggBuffer *buffer, const char *str)
 {
 	if (str == NULL) {
 		return egg_buffer_add_uint32(buffer, 0xffffffff);
@@ -433,8 +448,8 @@ int egg_buffer_add_string(EggBuffer * buffer, const char *str)
 }
 
 int
-egg_buffer_get_string(EggBuffer * buffer, size_t offset, size_t * next_offset,
-		      char **str_ret, EggBufferAllocator allocator)
+egg_buffer_get_string(EggBuffer *buffer, size_t offset, size_t *next_offset, char **str_ret,
+                      EggBufferAllocator allocator)
 {
 	uint32_t len;
 
@@ -463,7 +478,7 @@ egg_buffer_get_string(EggBuffer * buffer, size_t offset, size_t * next_offset,
 		return 0;
 
 	/* The passed allocator may be for non-pageable memory */
-	*str_ret = (allocator) (NULL, len + 1);
+	*str_ret = (allocator)(NULL, len + 1);
 	if (!*str_ret)
 		return 0;
 	memcpy(*str_ret, buffer->buf + offset, len);
@@ -475,7 +490,8 @@ egg_buffer_get_string(EggBuffer * buffer, size_t offset, size_t * next_offset,
 	return 1;
 }
 
-int egg_buffer_add_stringv(EggBuffer * buffer, const char **strv)
+int
+egg_buffer_add_stringv(EggBuffer *buffer, const char **strv)
 {
 	const char **v;
 	uint32_t n = 0;
@@ -499,8 +515,8 @@ int egg_buffer_add_stringv(EggBuffer * buffer, const char **strv)
 }
 
 int
-egg_buffer_get_stringv(EggBuffer * buffer, size_t offset, size_t * next_offset,
-		       char ***strv_ret, EggBufferAllocator allocator)
+egg_buffer_get_stringv(EggBuffer *buffer, size_t offset, size_t *next_offset, char ***strv_ret,
+                       EggBufferAllocator allocator)
 {
 	uint32_t n, i, j;
 	size_t len;
@@ -516,7 +532,7 @@ egg_buffer_get_stringv(EggBuffer * buffer, size_t offset, size_t * next_offset,
 
 	/* Then that number of strings */
 	len = (n + 1) * sizeof(char *);
-	*strv_ret = (char **)(allocator) (NULL, len);
+	*strv_ret = (char **)(allocator)(NULL, len);
 	if (!*strv_ret)
 		return 0;
 
@@ -524,13 +540,12 @@ egg_buffer_get_stringv(EggBuffer * buffer, size_t offset, size_t * next_offset,
 	memset(*strv_ret, 0, len);
 
 	for (i = 0; i < n; ++i) {
-		if (!egg_buffer_get_string(buffer, offset, &offset,
-					   &((*strv_ret)[i]), allocator)) {
+		if (!egg_buffer_get_string(buffer, offset, &offset, &((*strv_ret)[i]), allocator)) {
 
 			/* Free all the strings on failure */
 			for (j = 0; j < i; ++j) {
 				if ((*strv_ret)[j])
-					(allocator) ((*strv_ret)[j], 0);
+					(allocator)((*strv_ret)[j], 0);
 			}
 
 			return 0;

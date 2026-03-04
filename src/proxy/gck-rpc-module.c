@@ -29,30 +29,30 @@
 
 #include "pkcs11/pkcs11.h"
 
-#include <sys/types.h>
 #include <sys/param.h>
+#include <sys/types.h>
 #ifdef __MINGW32__
-# include <winsock2.h>
+#include <winsock2.h>
 #else
-# include <sys/socket.h>
-# include <sys/un.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-# include <netdb.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #endif
 
-#include <stdlib.h>
-#include <limits.h>
 #include <ctype.h>
-#include <stdint.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <pthread.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* -------------------------------------------------------------------
  * GLOBALS / DEFINES
@@ -67,10 +67,12 @@ static pid_t pkcs11_initialized_pid = 0;
 static uint64_t pkcs11_app_id = 0;
 
 /* The socket to connect to */
-static char pkcs11_socket_path[MAXPATHLEN] = { 0, };
+static char pkcs11_socket_path[MAXPATHLEN] = {
+	0,
+};
 
 /* The error used by us when parsing of rpc message fails */
-#define PARSE_ERROR   CKR_DEVICE_ERROR
+#define PARSE_ERROR CKR_DEVICE_ERROR
 
 /* -----------------------------------------------------------------------------
  * LOGGING and DEBUGGING
@@ -82,10 +84,14 @@ static char pkcs11_socket_path[MAXPATHLEN] = { 0, };
 #endif
 #define warning(x) gck_rpc_warn x
 
-#define return_val_if_fail(x, v) \
-	if (!(x)) { gck_rpc_warn ("'%s' not true at %s", #x, __func__); return v; }
+#define return_val_if_fail(x, v)                                   \
+	if (!(x)) {                                                \
+		gck_rpc_warn("'%s' not true at %s", #x, __func__); \
+		return v;                                          \
+	}
 
-void gck_rpc_log(const char *msg, ...)
+void
+gck_rpc_log(const char *msg, ...)
 {
 	va_list ap;
 
@@ -99,7 +105,8 @@ void gck_rpc_log(const char *msg, ...)
  * MODULE ARGUMENTS
  */
 
-static void parse_argument(char *arg)
+static void
+parse_argument(char *arg)
 {
 	char *value;
 
@@ -111,15 +118,15 @@ static void parse_argument(char *arg)
 
 	/* Setup the socket path from the arguments */
 	if (strcmp(arg, "socket") == 0)
-		snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path), "%s",
-			 value);
+		snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path), "%s", value);
 	else if (strcmp(arg, "tls_psk_file") == 0)
 		warning(("tls_psk_file is deprecated, use PKCS11_PROXY_TLS_* env vars"));
 	else
 		warning(("unrecognized argument: %s", arg));
 }
 
-static void parse_arguments(const char *string)
+static void
+parse_arguments(const char *string)
 {
 	char quote = '\0';
 	char *src, *dup, *at, *arg;
@@ -190,21 +197,15 @@ done:
  * CALL SESSION
  */
 
-enum CallStatus {
-	CALL_INVALID,
-	CALL_READY,
-	CALL_PREP,
-	CALL_TRANSIT,
-	CALL_PARSE
-};
+enum CallStatus { CALL_INVALID, CALL_READY, CALL_PREP, CALL_TRANSIT, CALL_PARSE };
 
 typedef struct _CallState {
-	int socket;		/* The connection we're sending on */
-	GckRpcMessage *req;	/* The current request */
-	GckRpcMessage *resp;	/* The current response */
+	int socket;          /* The connection we're sending on */
+	GckRpcMessage *req;  /* The current request */
+	GckRpcMessage *resp; /* The current response */
 	int call_status;
 	GckRpcTlsState *tls;
-	struct _CallState *next;	/* For pooling of completed sockets */
+	struct _CallState *next; /* For pooling of completed sockets */
 } CallState;
 
 /* Maximum number of idle calls */
@@ -218,15 +219,17 @@ static unsigned int n_call_state_pool = 0;
 static pthread_mutex_t call_state_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Allocator for call session buffers */
-static void *call_allocator(void *p, size_t sz)
+static void *
+call_allocator(void *p, size_t sz)
 {
-	void *res = realloc(p, (size_t) sz);
+	void *res = realloc(p, (size_t)sz);
 	if (!res && sz)
 		warning(("memory allocation of %lu bytes failed", sz));
 	return res;
 }
 
-static void call_disconnect(CallState * cs)
+static void
+call_disconnect(CallState *cs)
 {
 	assert(cs);
 
@@ -238,7 +241,8 @@ static void call_disconnect(CallState * cs)
 }
 
 /* Write all data to session socket.  */
-static CK_RV call_write(CallState * cs, unsigned char *data, size_t len)
+static CK_RV
+call_write(CallState *cs, unsigned char *data, size_t len)
 {
 	int fd, r;
 
@@ -255,9 +259,9 @@ static CK_RV call_write(CallState * cs, unsigned char *data, size_t len)
 		}
 
 		if (cs->tls)
-			r = gck_rpc_tls_write_all(cs->tls, (void *) data, len);
+			r = gck_rpc_tls_write_all(cs->tls, (void *)data, len);
 		else
-			r = send(fd, (void *) data, len, 0);
+			r = send(fd, (void *)data, len, 0);
 
 		if (r == -1) {
 			if (errno == EPIPE) {
@@ -265,8 +269,7 @@ static CK_RV call_write(CallState * cs, unsigned char *data, size_t len)
 				call_disconnect(cs);
 				return CKR_DEVICE_ERROR;
 			} else if (errno != EAGAIN && errno != EINTR) {
-				warning(("couldn't send data: %s",
-					 strerror(errno)));
+				warning(("couldn't send data: %s", strerror(errno)));
 				return CKR_DEVICE_ERROR;
 			}
 		} else {
@@ -280,7 +283,8 @@ static CK_RV call_write(CallState * cs, unsigned char *data, size_t len)
 }
 
 /* Read a certain amount of data from session socket. */
-static CK_RV call_read(CallState * cs, unsigned char *data, size_t len)
+static CK_RV
+call_read(CallState *cs, unsigned char *data, size_t len)
 {
 	int fd, r;
 
@@ -297,9 +301,9 @@ static CK_RV call_read(CallState * cs, unsigned char *data, size_t len)
 		}
 
 		if (cs->tls)
-			r = gck_rpc_tls_read_all(cs->tls, (void *) data, len);
+			r = gck_rpc_tls_read_all(cs->tls, (void *)data, len);
 		else
-			r = recv(fd, (void *) data, len, 0);
+			r = recv(fd, (void *)data, len, 0);
 
 		if (r == 0) {
 			warning(("couldn't receive data: daemon closed connection"));
@@ -307,8 +311,7 @@ static CK_RV call_read(CallState * cs, unsigned char *data, size_t len)
 			return CKR_DEVICE_ERROR;
 		} else if (r == -1) {
 			if (errno != EAGAIN && errno != EINTR) {
-				warning(("couldn't receive data: %s",
-					 strerror(errno)));
+				warning(("couldn't receive data: %s", strerror(errno)));
 				return CKR_DEVICE_ERROR;
 			}
 		} else {
@@ -321,19 +324,20 @@ static CK_RV call_read(CallState * cs, unsigned char *data, size_t len)
 	return CKR_OK;
 }
 
-static int _connect_to_host_port(char *host, char *port)
+static int
+_connect_to_host_port(char *host, char *port)
 {
 	char hoststr[NI_MAXHOST], portstr[NI_MAXSERV], hostport[NI_MAXHOST + NI_MAXSERV + 1];
 	struct addrinfo *ai, *first, hints;
 	int res, sock, one = 1;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC;		/* Either IPv4 or IPv6 */
-	hints.ai_socktype = SOCK_STREAM;	/* Only stream oriented sockets */
+	hints.ai_family = AF_UNSPEC;     /* Either IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM; /* Only stream oriented sockets */
 
 	if ((res = getaddrinfo(host, port, &hints, &ai)) < 0) {
-		gck_rpc_warn("couldn't resolve host '%.100s' or service '%.100s' : %.100s\n",
-			     host, port, gai_strerror(res));
+		gck_rpc_warn("couldn't resolve host '%.100s' or service '%.100s' : %.100s\n", host,
+		             port, gai_strerror(res));
 		return -1;
 	}
 
@@ -344,42 +348,43 @@ static int _connect_to_host_port(char *host, char *port)
 	 * our options and connect()
 	 */
 	while (ai) {
-		if ((res = getnameinfo(ai->ai_addr, ai->ai_addrlen,
-				       hoststr, sizeof(hoststr), portstr, sizeof(portstr),
-				       NI_NUMERICHOST | NI_NUMERICSERV)) != 0) {
-			gck_rpc_warn("couldn't call getnameinfo on pkcs11 socket (%.100s %.100s): %.100s",
-				     host, port, gai_strerror(res));
+		if ((res = getnameinfo(ai->ai_addr, ai->ai_addrlen, hoststr, sizeof(hoststr),
+		                       portstr, sizeof(portstr), NI_NUMERICHOST | NI_NUMERICSERV))
+		    != 0) {
+			gck_rpc_warn(
+			    "couldn't call getnameinfo on pkcs11 socket (%.100s %.100s): %.100s",
+			    host, port, gai_strerror(res));
 			sock = -1;
 			continue;
 		}
 
 		snprintf(hostport, sizeof(hostport),
-			 (ai->ai_family == AF_INET6) ? "[%s]:%s" : "%s:%s", hoststr, portstr);
+		         (ai->ai_family == AF_INET6) ? "[%s]:%s" : "%s:%s", hoststr, portstr);
 
 		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 
 		if (sock >= 0) {
-			if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
-				       (char *)&one, sizeof (one)) == -1) {
+			if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one))
+			    == -1) {
 				gck_rpc_warn("couldn't set pkcs11 "
-					     "socket protocol options (%.100s): %.100s",
-					     hostport, strerror (errno));
+				             "socket protocol options (%.100s): %.100s",
+				             hostport, strerror(errno));
 				goto next;
 			}
 
 #ifndef __MINGW32__
 			/* close on exec */
 			if (fcntl(sock, F_SETFD, 1) == -1) {
-				gck_rpc_warn("couldn't secure socket (%.100s): %.100s",
-					     hostport, strerror(errno));
+				gck_rpc_warn("couldn't secure socket (%.100s): %.100s", hostport,
+				             strerror(errno));
 				goto next;
 			}
 #endif
 
 			if (connect(sock, ai->ai_addr, ai->ai_addrlen) < 0) {
 				close(sock);
-				warning(("couldn't connect (%.100s): %s",
-					 hostport, strerror(errno)));
+				warning(
+				    ("couldn't connect (%.100s): %s", hostport, strerror(errno)));
 				goto next;
 			}
 
@@ -392,19 +397,20 @@ static int _connect_to_host_port(char *host, char *port)
 	}
 
 	if (sock < 0) {
-		gck_rpc_warn("couldn't create pkcs11 socket (%.100s): %.100s\n",
-			     pkcs11_socket_path, strerror(errno));
+		gck_rpc_warn("couldn't create pkcs11 socket (%.100s): %.100s\n", pkcs11_socket_path,
+		             strerror(errno));
 		sock = -1;
 		goto out;
 	}
 
- out:
+out:
 	freeaddrinfo(first);
 
 	return sock;
 }
 
-static CK_RV call_connect(CallState * cs)
+static CK_RV
+call_connect(CallState *cs)
 {
 	struct sockaddr_un addr;
 	int sock;
@@ -418,13 +424,12 @@ static CK_RV call_connect(CallState * cs)
 
 	memset(&addr, 0, sizeof(addr));
 
-	if (! strncmp("tcp://", pkcs11_socket_path, 6) ||
-	    ! strncmp("tls://", pkcs11_socket_path, 6)) {
+	if (!strncmp("tcp://", pkcs11_socket_path, 6)
+	    || !strncmp("tls://", pkcs11_socket_path, 6)) {
 		char *host, *port;
 
-		if (! gck_rpc_parse_host_port(pkcs11_socket_path + 6, &host, &port)) {
-			gck_rpc_warn("failed parsing pkcs11 socket : %s",
-				     pkcs11_socket_path);
+		if (!gck_rpc_parse_host_port(pkcs11_socket_path + 6, &host, &port)) {
+			gck_rpc_warn("failed parsing pkcs11 socket : %s", pkcs11_socket_path);
 			return CKR_DEVICE_ERROR;
 		}
 
@@ -435,34 +440,32 @@ static CK_RV call_connect(CallState * cs)
 
 		free(host);
 
-		if (! strncmp("tls://", pkcs11_socket_path, 6)) {
+		if (!strncmp("tls://", pkcs11_socket_path, 6)) {
 			cs->tls = calloc(1, sizeof(GckRpcTlsState));
 			if (cs->tls == NULL) {
 				warning(("can't allocate memory for TLS"));
 				return CKR_HOST_MEMORY;
 			}
 
-			if (! gck_rpc_init_tls(cs->tls, GCK_RPC_TLS_CLIENT)) {
+			if (!gck_rpc_init_tls(cs->tls, GCK_RPC_TLS_CLIENT)) {
 				warning(("TLS initialization failed"));
 				return CKR_DEVICE_ERROR;
 			}
 
-			if (! gck_rpc_start_tls(cs->tls, sock)) {
+			if (!gck_rpc_start_tls(cs->tls, sock)) {
 				gck_rpc_warn("failed starting TLS");
 				return CKR_DEVICE_ERROR;
 			}
 		}
 	} else {
 		addr.sun_family = AF_UNIX;
-		strncpy(addr.sun_path, pkcs11_socket_path,
-			sizeof(addr.sun_path));
+		strncpy(addr.sun_path, pkcs11_socket_path, sizeof(addr.sun_path));
 
 		sock = socket(AF_UNIX, SOCK_STREAM, 0);
 		if (sock < 0) {
 			warning(("couldn't open socket: %s", strerror(errno)));
 			return CKR_DEVICE_ERROR;
 		}
-
 
 #ifndef __MINGW32__
 		/* close on exec */
@@ -475,8 +478,8 @@ static CK_RV call_connect(CallState * cs)
 
 		if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 			close(sock);
-			warning(("couldn't connect to: %s: %s", pkcs11_socket_path,
-				 strerror(errno)));
+			warning(
+			    ("couldn't connect to: %s: %s", pkcs11_socket_path, strerror(errno)));
 			return CKR_DEVICE_ERROR;
 		}
 	}
@@ -485,11 +488,11 @@ static CK_RV call_connect(CallState * cs)
 	cs->call_status = CALL_READY;
 	debug(("connected socket"));
 
-	return call_write(cs, (unsigned char*)&pkcs11_app_id,
-			  sizeof(pkcs11_app_id));
+	return call_write(cs, (unsigned char *)&pkcs11_app_id, sizeof(pkcs11_app_id));
 }
 
-static void call_destroy(void *value)
+static void
+call_destroy(void *value)
 {
 	CallState *cs = value;
 
@@ -509,7 +512,8 @@ static void call_destroy(void *value)
 	}
 }
 
-static CK_RV call_lookup(CallState ** ret)
+static CK_RV
+call_lookup(CallState **ret)
 {
 	CallState *cs = NULL;
 	CK_RV rv;
@@ -552,7 +556,8 @@ static CK_RV call_lookup(CallState ** ret)
 }
 
 /* Perform the initial setup for a new call. */
-static CK_RV call_prepare(CallState * cs, int call_id)
+static CK_RV
+call_prepare(CallState *cs, int call_id)
 {
 	assert(cs);
 	assert(cs->call_status == CALL_READY);
@@ -582,7 +587,8 @@ static CK_RV call_prepare(CallState * cs, int call_id)
  * Used by call_session_do_call() to actually send the message to the daemon.
  * Note how we unlock and relock the session during the call.
  */
-static CK_RV call_send_recv(CallState * cs)
+static CK_RV
+call_send_recv(CallState *cs)
 {
 	GckRpcMessage *req, *resp;
 	unsigned char buf[4];
@@ -662,7 +668,8 @@ cleanup:
  * At this point the request is ready. So we validate it, and we send it to
  * the daemon for a response.
  */
-static CK_RV call_run(CallState * cs)
+static CK_RV
+call_run(CallState *cs)
 {
 	CK_RV ret = CKR_OK;
 	CK_ULONG ckerr;
@@ -698,12 +705,13 @@ static CK_RV call_run(CallState * cs)
 		}
 
 		if (ckerr <= CKR_OK) {
-			warning(("invalid error response from gnome-keyring-daemon: bad error code"));
+			warning(
+			    ("invalid error response from gnome-keyring-daemon: bad error code"));
 			return CKR_DEVICE_ERROR;
 		}
 
 		/* An error code from the daemon */
-		return (CK_RV) ckerr;
+		return (CK_RV)ckerr;
 	}
 
 	/* Make sure daemon answered the right call */
@@ -718,7 +726,8 @@ static CK_RV call_run(CallState * cs)
 	return CKR_OK;
 }
 
-static CK_RV call_done(CallState * cs, CK_RV ret)
+static CK_RV
+call_done(CallState *cs, CK_RV ret)
 {
 	assert(cs);
 	assert(cs->call_status > CALL_INVALID);
@@ -729,7 +738,8 @@ static CK_RV call_done(CallState * cs, CK_RV ret)
 		if (ret == CKR_OK) {
 
 			if (gck_rpc_message_buffer_error(cs->resp)) {
-				warning(("invalid response from gnome-keyring-daemon: bad argument data"));
+				warning(("invalid response from gnome-keyring-daemon: bad argument "
+				         "data"));
 				ret = CKR_GENERAL_ERROR;
 			} else {
 				/* Double check that the signature matched our decoding */
@@ -739,8 +749,7 @@ static CK_RV call_done(CallState * cs, CK_RV ret)
 	}
 
 	/* Certain error codes cause us to discard the conenction */
-	if (ret != CKR_DEVICE_ERROR && ret != CKR_DEVICE_REMOVED
-	    && cs->socket != -1) {
+	if (ret != CKR_DEVICE_ERROR && ret != CKR_DEVICE_REMOVED && cs->socket != -1) {
 
 		/* Try and stash it away for later use */
 		pthread_mutex_lock(&call_state_mutex);
@@ -768,8 +777,7 @@ static CK_RV call_done(CallState * cs, CK_RV ret)
  */
 
 static CK_RV
-proto_read_attribute_array(GckRpcMessage * msg, CK_ATTRIBUTE_PTR arr,
-			   CK_ULONG len)
+proto_read_attribute_array(GckRpcMessage *msg, CK_ATTRIBUTE_PTR arr, CK_ULONG len)
 {
 	uint32_t i, num, value, type;
 	CK_ATTRIBUTE_PTR attr;
@@ -788,8 +796,7 @@ proto_read_attribute_array(GckRpcMessage * msg, CK_ATTRIBUTE_PTR arr,
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "aA"));
 
 	/* Get the number of items. We need this value to be correct */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &num))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &num))
 		return PARSE_ERROR;
 
 	if (len != num) {
@@ -811,21 +818,16 @@ proto_read_attribute_array(GckRpcMessage * msg, CK_ATTRIBUTE_PTR arr,
 	for (i = 0; i < num; ++i) {
 
 		/* The attribute type */
-		egg_buffer_get_uint32(&msg->buffer, msg->parsed,
-				      &msg->parsed, &type);
+		egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &type);
 
 		/* Attribute validity */
-		egg_buffer_get_byte(&msg->buffer, msg->parsed,
-				    &msg->parsed, &validity);
+		egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &validity);
 
 		/* And the data itself */
 		if (validity) {
-			if (egg_buffer_get_uint32
-			    (&msg->buffer, msg->parsed, &msg->parsed, &value)
-			    && egg_buffer_get_byte_array(&msg->buffer,
-							 msg->parsed,
-							 &msg->parsed, &attrval,
-							 &attrlen)) {
+			if (egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &value)
+			    && egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed,
+			                                 &attrval, &attrlen)) {
 				if (attrval && value != attrlen) {
 					warning(("attribute length does not match attribute data"));
 					return PARSE_ERROR;
@@ -870,11 +872,11 @@ proto_read_attribute_array(GckRpcMessage * msg, CK_ATTRIBUTE_PTR arr,
 					/* Attribute len is an integer, but
 					 * does not match CK_ULONG size, it's certainly
 					 * a CK_ULONG from a different platform */
-					if (attrlen == sizeof(uint64_t) &&
-					    sizeof(CK_ULONG) != sizeof(uint64_t) &&
-					    gck_rpc_has_ulong_parameter(attr->type)) {
+					if (attrlen == sizeof(uint64_t)
+					    && sizeof(CK_ULONG) != sizeof(uint64_t)
+					    && gck_rpc_has_ulong_parameter(attr->type)) {
 						attrlen = sizeof(CK_ULONG);
-						a = *(uint64_t *) attrval;
+						a = *(uint64_t *)attrval;
 						attrval = (unsigned char *)&a;
 					}
 					attr->ulValueLen = attrlen;
@@ -883,7 +885,7 @@ proto_read_attribute_array(GckRpcMessage * msg, CK_ATTRIBUTE_PTR arr,
 
 				/* Not a valid attribute */
 			} else {
-				attr->ulValueLen = ((CK_ULONG) - 1);
+				attr->ulValueLen = ((CK_ULONG)-1);
 			}
 		}
 	}
@@ -899,8 +901,7 @@ proto_read_attribute_array(GckRpcMessage * msg, CK_ATTRIBUTE_PTR arr,
 }
 
 static CK_RV
-proto_read_byte_array(GckRpcMessage * msg, CK_BYTE_PTR arr,
-		      CK_ULONG_PTR len, CK_ULONG max)
+proto_read_byte_array(GckRpcMessage *msg, CK_BYTE_PTR arr, CK_ULONG_PTR len, CK_ULONG max)
 {
 	const unsigned char *val;
 	unsigned char valid;
@@ -913,17 +914,14 @@ proto_read_byte_array(GckRpcMessage * msg, CK_BYTE_PTR arr,
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "ay"));
 
 	/* A single byte which determines whether valid or not */
-	if (!egg_buffer_get_byte
-	    (&msg->buffer, msg->parsed, &msg->parsed, &valid))
+	if (!egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &valid))
 		return PARSE_ERROR;
 
 	/* If not valid, then just the length is encoded, this can signify CKR_BUFFER_TOO_SMALL */
 	if (!valid) {
 		uint32_t t_len;
 
-		if (!egg_buffer_get_uint32
-		    (&msg->buffer, msg->parsed, &msg->parsed,
-		     & t_len))
+		if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &t_len))
 			return PARSE_ERROR;
 
 		*len = t_len;
@@ -935,8 +933,7 @@ proto_read_byte_array(GckRpcMessage * msg, CK_BYTE_PTR arr,
 	}
 
 	/* Get the actual bytes */
-	if (!egg_buffer_get_byte_array
-	    (&msg->buffer, msg->parsed, &msg->parsed, &val, &vlen))
+	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed, &val, &vlen))
 		return PARSE_ERROR;
 
 	*len = vlen;
@@ -954,8 +951,7 @@ proto_read_byte_array(GckRpcMessage * msg, CK_BYTE_PTR arr,
 }
 
 static CK_RV
-proto_read_ulong_array(GckRpcMessage * msg, CK_ULONG_PTR arr,
-		       CK_ULONG_PTR len, CK_ULONG max)
+proto_read_ulong_array(GckRpcMessage *msg, CK_ULONG_PTR arr, CK_ULONG_PTR len, CK_ULONG max)
 {
 	uint32_t i, num;
 	uint64_t val;
@@ -968,13 +964,11 @@ proto_read_ulong_array(GckRpcMessage * msg, CK_ULONG_PTR arr,
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "au"));
 
 	/* A single byte which determines whether valid or not */
-	if (!egg_buffer_get_byte
-	    (&msg->buffer, msg->parsed, &msg->parsed, &valid))
+	if (!egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &valid))
 		return PARSE_ERROR;
 
 	/* Get the number of items. */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &num))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &num))
 		return PARSE_ERROR;
 
 	*len = num;
@@ -992,16 +986,16 @@ proto_read_ulong_array(GckRpcMessage * msg, CK_ULONG_PTR arr,
 
 	/* We need to go ahead and read everything in all cases */
 	for (i = 0; i < num; ++i) {
-		egg_buffer_get_uint64(&msg->buffer, msg->parsed, &msg->parsed,
-				      &val);
+		egg_buffer_get_uint64(&msg->buffer, msg->parsed, &msg->parsed, &val);
 		if (arr)
-			arr[i] = (CK_ULONG) val;
+			arr[i] = (CK_ULONG)val;
 	}
 
 	return egg_buffer_has_error(&msg->buffer) ? PARSE_ERROR : CKR_OK;
 }
 
-static CK_RV proto_write_mechanism(GckRpcMessage * msg, CK_MECHANISM_PTR mech)
+static CK_RV
+proto_write_mechanism(GckRpcMessage *msg, CK_MECHANISM_PTR mech)
 {
 	assert(msg);
 	assert(mech);
@@ -1027,31 +1021,31 @@ static CK_RV proto_write_mechanism(GckRpcMessage * msg, CK_MECHANISM_PTR mech)
 	if (gck_rpc_mechanism_has_no_parameters(mech->mechanism))
 		egg_buffer_add_byte_array(&msg->buffer, NULL, 0);
 	else if (gck_rpc_mechanism_has_sane_parameters(mech->mechanism))
-		egg_buffer_add_byte_array(&msg->buffer, mech->pParameter,
-					  mech->ulParameterLen);
+		egg_buffer_add_byte_array(&msg->buffer, mech->pParameter, mech->ulParameterLen);
 	else
 		return CKR_MECHANISM_INVALID;
 
 	return egg_buffer_has_error(&msg->buffer) ? CKR_HOST_MEMORY : CKR_OK;
 }
 
-static CK_RV proto_read_info(GckRpcMessage * msg, CK_INFO_PTR info)
+static CK_RV
+proto_read_info(GckRpcMessage *msg, CK_INFO_PTR info)
 {
 	assert(msg);
 	assert(info);
 
-	if (!gck_rpc_message_read_version(msg, &info->cryptokiVersion) ||
-	    !gck_rpc_message_read_space_string(msg, info->manufacturerID, 32) ||
-	    !gck_rpc_message_read_ulong(msg, &info->flags) ||
-	    !gck_rpc_message_read_space_string(msg, info->libraryDescription,
-					       32)
+	if (!gck_rpc_message_read_version(msg, &info->cryptokiVersion)
+	    || !gck_rpc_message_read_space_string(msg, info->manufacturerID, 32)
+	    || !gck_rpc_message_read_ulong(msg, &info->flags)
+	    || !gck_rpc_message_read_space_string(msg, info->libraryDescription, 32)
 	    || !gck_rpc_message_read_version(msg, &info->libraryVersion))
 		return PARSE_ERROR;
 
 	return CKR_OK;
 }
 
-static CK_RV proto_read_slot_info(GckRpcMessage * msg, CK_SLOT_INFO_PTR info)
+static CK_RV
+proto_read_slot_info(GckRpcMessage *msg, CK_SLOT_INFO_PTR info)
 {
 	assert(msg);
 	assert(info);
@@ -1066,58 +1060,59 @@ static CK_RV proto_read_slot_info(GckRpcMessage * msg, CK_SLOT_INFO_PTR info)
 	return CKR_OK;
 }
 
-static CK_RV proto_read_token_info(GckRpcMessage * msg, CK_TOKEN_INFO_PTR info)
+static CK_RV
+proto_read_token_info(GckRpcMessage *msg, CK_TOKEN_INFO_PTR info)
 {
 	assert(msg);
 	assert(info);
 
-	if (!gck_rpc_message_read_space_string(msg, info->label, 32) ||
-	    !gck_rpc_message_read_space_string(msg, info->manufacturerID, 32) ||
-	    !gck_rpc_message_read_space_string(msg, info->model, 16) ||
-	    !gck_rpc_message_read_space_string(msg, info->serialNumber, 16) ||
-	    !gck_rpc_message_read_ulong(msg, &info->flags) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulMaxSessionCount) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulSessionCount) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulMaxRwSessionCount) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulRwSessionCount) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulMaxPinLen) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulMinPinLen) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulTotalPublicMemory) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulFreePublicMemory) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulTotalPrivateMemory) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulFreePrivateMemory) ||
-	    !gck_rpc_message_read_version(msg, &info->hardwareVersion) ||
-	    !gck_rpc_message_read_version(msg, &info->firmwareVersion) ||
-	    !gck_rpc_message_read_space_string(msg, info->utcTime, 16))
+	if (!gck_rpc_message_read_space_string(msg, info->label, 32)
+	    || !gck_rpc_message_read_space_string(msg, info->manufacturerID, 32)
+	    || !gck_rpc_message_read_space_string(msg, info->model, 16)
+	    || !gck_rpc_message_read_space_string(msg, info->serialNumber, 16)
+	    || !gck_rpc_message_read_ulong(msg, &info->flags)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulMaxSessionCount)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulSessionCount)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulMaxRwSessionCount)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulRwSessionCount)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulMaxPinLen)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulMinPinLen)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulTotalPublicMemory)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulFreePublicMemory)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulTotalPrivateMemory)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulFreePrivateMemory)
+	    || !gck_rpc_message_read_version(msg, &info->hardwareVersion)
+	    || !gck_rpc_message_read_version(msg, &info->firmwareVersion)
+	    || !gck_rpc_message_read_space_string(msg, info->utcTime, 16))
 		return PARSE_ERROR;
 
 	return CKR_OK;
 }
 
 static CK_RV
-proto_read_mechanism_info(GckRpcMessage * msg, CK_MECHANISM_INFO_PTR info)
+proto_read_mechanism_info(GckRpcMessage *msg, CK_MECHANISM_INFO_PTR info)
 {
 	assert(msg);
 	assert(info);
 
-	if (!gck_rpc_message_read_ulong(msg, &info->ulMinKeySize) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulMaxKeySize) ||
-	    !gck_rpc_message_read_ulong(msg, &info->flags))
+	if (!gck_rpc_message_read_ulong(msg, &info->ulMinKeySize)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulMaxKeySize)
+	    || !gck_rpc_message_read_ulong(msg, &info->flags))
 		return PARSE_ERROR;
 
 	return CKR_OK;
 }
 
 static CK_RV
-proto_read_sesssion_info(GckRpcMessage * msg, CK_SESSION_INFO_PTR info)
+proto_read_sesssion_info(GckRpcMessage *msg, CK_SESSION_INFO_PTR info)
 {
 	assert(msg);
 	assert(info);
 
-	if (!gck_rpc_message_read_ulong(msg, &info->slotID) ||
-	    !gck_rpc_message_read_ulong(msg, &info->state) ||
-	    !gck_rpc_message_read_ulong(msg, &info->flags) ||
-	    !gck_rpc_message_read_ulong(msg, &info->ulDeviceError))
+	if (!gck_rpc_message_read_ulong(msg, &info->slotID)
+	    || !gck_rpc_message_read_ulong(msg, &info->state)
+	    || !gck_rpc_message_read_ulong(msg, &info->flags)
+	    || !gck_rpc_message_read_ulong(msg, &info->ulDeviceError))
 		return PARSE_ERROR;
 
 	return CKR_OK;
@@ -1127,161 +1122,200 @@ proto_read_sesssion_info(GckRpcMessage * msg, CK_SESSION_INFO_PTR info)
  * CALL MACROS
  */
 
-#define BEGIN_CALL(call_id) \
-	debug ((#call_id ": enter")); \
-	return_val_if_fail (pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED); \
-	{  \
-		CallState *_cs; \
-		CK_RV _ret = CKR_OK; \
-		_ret = call_lookup (&_cs); \
-		if (_ret != CKR_OK) return _ret; \
-		_ret = call_prepare (_cs, GCK_RPC_CALL_##call_id); \
-		if (_ret != CKR_OK) goto _cleanup;
+#define BEGIN_CALL(call_id)                                                   \
+	debug((#call_id ": enter"));                                          \
+	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED); \
+	{                                                                     \
+		CallState *_cs;                                               \
+		CK_RV _ret = CKR_OK;                                          \
+		_ret = call_lookup(&_cs);                                     \
+		if (_ret != CKR_OK)                                           \
+			return _ret;                                          \
+		_ret = call_prepare(_cs, GCK_RPC_CALL_##call_id);             \
+		if (_ret != CKR_OK)                                           \
+			goto _cleanup;
 
-#define PROCESS_CALL \
-		_ret = call_run (_cs); \
-		if (_ret != CKR_OK) goto _cleanup;
-
-#define RETURN(ret) \
-		_ret = ret; \
+#define PROCESS_CALL          \
+	_ret = call_run(_cs); \
+	if (_ret != CKR_OK)   \
 		goto _cleanup;
 
-#define END_CALL \
-	_cleanup: \
-		_ret = call_done (_cs, _ret); \
-		debug (("ret: 0x%x", _ret)); \
-		return _ret; \
+#define RETURN(ret) \
+	_ret = ret; \
+	goto _cleanup;
+
+#define END_CALL                     \
+	_cleanup:                    \
+	_ret = call_done(_cs, _ret); \
+	debug(("ret: 0x%x", _ret));  \
+	return _ret;                 \
 	}
 
-#define IN_BYTE(val) \
-	if (!gck_rpc_message_write_byte (_cs->req, val)) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_BYTE(val)                                      \
+	if (!gck_rpc_message_write_byte(_cs->req, val)) { \
+		_ret = CKR_HOST_MEMORY;                   \
+		goto _cleanup;                            \
+	}
 
-#define IN_ULONG(val) \
-	if (!gck_rpc_message_write_ulong (_cs->req, val)) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_ULONG(val)                                      \
+	if (!gck_rpc_message_write_ulong(_cs->req, val)) { \
+		_ret = CKR_HOST_MEMORY;                    \
+		goto _cleanup;                             \
+	}
 
-#define IN_SPACE_STRING(val, len)						\
-	if (!gck_rpc_message_write_space_string (_cs->req, val, len))	\
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_SPACE_STRING(val, len)                                      \
+	if (!gck_rpc_message_write_space_string(_cs->req, val, len)) { \
+		_ret = CKR_HOST_MEMORY;                                \
+		goto _cleanup;                                         \
+	}
 
-#define IN_BYTE_BUFFER(arr, len) \
-	if (!gck_rpc_message_write_byte_buffer (_cs->req, arr, len))	\
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_BYTE_BUFFER(arr, len)                                      \
+	if (!gck_rpc_message_write_byte_buffer(_cs->req, arr, len)) { \
+		_ret = CKR_HOST_MEMORY;                               \
+		goto _cleanup;                                        \
+	}
 
-#define IN_BYTE_ARRAY(arr, len) \
-	if (len != 0 && arr == NULL) \
-		{ _ret = CKR_ARGUMENTS_BAD; goto _cleanup; } \
-	if (!gck_rpc_message_write_byte_array (_cs->req, arr, len)) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_BYTE_ARRAY(arr, len)                                      \
+	if (len != 0 && arr == NULL) {                               \
+		_ret = CKR_ARGUMENTS_BAD;                            \
+		goto _cleanup;                                       \
+	}                                                            \
+	if (!gck_rpc_message_write_byte_array(_cs->req, arr, len)) { \
+		_ret = CKR_HOST_MEMORY;                              \
+		goto _cleanup;                                       \
+	}
 
-#define IN_ULONG_BUFFER(arr, len) \
-	if (len == NULL) \
-		{ _ret = CKR_ARGUMENTS_BAD; goto _cleanup; } \
+#define IN_ULONG_BUFFER(arr, len)         \
+	if (len == NULL) {                \
+		_ret = CKR_ARGUMENTS_BAD; \
+		goto _cleanup;            \
+	}                                 \
 	IN_ULONG_BUFFER2(arr, len);
 
-#define IN_ULONG_BUFFER2(arr, len) \
-	if (!gck_rpc_message_write_ulong_buffer (_cs->req, arr ? *len : 0)) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_ULONG_BUFFER2(arr, len)                                           \
+	if (!gck_rpc_message_write_ulong_buffer(_cs->req, arr ? *len : 0)) { \
+		_ret = CKR_HOST_MEMORY;                                      \
+		goto _cleanup;                                               \
+	}
 
-#define IN_ULONG_ARRAY(arr, len) \
-	if (len != 0 && arr == NULL) \
-		{ _ret = CKR_ARGUMENTS_BAD; goto _cleanup; }\
-	if (!gck_rpc_message_write_ulong_array (_cs->req, arr, len)) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_ULONG_ARRAY(arr, len)                                      \
+	if (len != 0 && arr == NULL) {                                \
+		_ret = CKR_ARGUMENTS_BAD;                             \
+		goto _cleanup;                                        \
+	}                                                             \
+	if (!gck_rpc_message_write_ulong_array(_cs->req, arr, len)) { \
+		_ret = CKR_HOST_MEMORY;                               \
+		goto _cleanup;                                        \
+	}
 
-#define IN_ATTRIBUTE_BUFFER(arr, num) \
-	if (num != 0 && arr == NULL) \
-		{ _ret = CKR_ARGUMENTS_BAD; goto _cleanup; } \
-	if (!gck_rpc_message_write_attribute_buffer (_cs->req, (arr), (num))) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_ATTRIBUTE_BUFFER(arr, num)                                          \
+	if (num != 0 && arr == NULL) {                                         \
+		_ret = CKR_ARGUMENTS_BAD;                                      \
+		goto _cleanup;                                                 \
+	}                                                                      \
+	if (!gck_rpc_message_write_attribute_buffer(_cs->req, (arr), (num))) { \
+		_ret = CKR_HOST_MEMORY;                                        \
+		goto _cleanup;                                                 \
+	}
 
-#define IN_ATTRIBUTE_ARRAY(arr, num) \
-	if (num != 0 && arr == NULL) \
-		{ _ret = CKR_ARGUMENTS_BAD; goto _cleanup; } \
-	if (!gck_rpc_message_write_attribute_array (_cs->req, (arr), (num))) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_ATTRIBUTE_ARRAY(arr, num)                                          \
+	if (num != 0 && arr == NULL) {                                        \
+		_ret = CKR_ARGUMENTS_BAD;                                     \
+		goto _cleanup;                                                \
+	}                                                                     \
+	if (!gck_rpc_message_write_attribute_array(_cs->req, (arr), (num))) { \
+		_ret = CKR_HOST_MEMORY;                                       \
+		goto _cleanup;                                                \
+	}
 
-#define IN_MECHANISM_TYPE(val) \
-	if(!gck_rpc_mechanism_is_supported (val)) \
-		{ _ret = CKR_MECHANISM_INVALID; goto _cleanup; } \
-	if (!gck_rpc_message_write_ulong (_cs->req, val)) \
-		{ _ret = CKR_HOST_MEMORY; goto _cleanup; }
+#define IN_MECHANISM_TYPE(val)                             \
+	if (!gck_rpc_mechanism_is_supported(val)) {        \
+		_ret = CKR_MECHANISM_INVALID;              \
+		goto _cleanup;                             \
+	}                                                  \
+	if (!gck_rpc_message_write_ulong(_cs->req, val)) { \
+		_ret = CKR_HOST_MEMORY;                    \
+		goto _cleanup;                             \
+	}
 
-#define IN_MECHANISM(val) \
-	if (val == NULL) \
-		{ _ret = CKR_ARGUMENTS_BAD; goto _cleanup; } \
-	_ret = proto_write_mechanism (_cs->req, val); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_MECHANISM(val)                            \
+	if (val == NULL) {                           \
+		_ret = CKR_ARGUMENTS_BAD;            \
+		goto _cleanup;                       \
+	}                                            \
+	_ret = proto_write_mechanism(_cs->req, val); \
+	if (_ret != CKR_OK)                          \
+		goto _cleanup;
 
-#define OUT_ULONG(val) \
-	if (val == NULL) \
-		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK && !gck_rpc_message_read_ulong (_cs->resp, val)) \
+#define OUT_ULONG(val)                                                     \
+	if (val == NULL)                                                   \
+		_ret = CKR_ARGUMENTS_BAD;                                  \
+	if (_ret == CKR_OK && !gck_rpc_message_read_ulong(_cs->resp, val)) \
 		_ret = PARSE_ERROR;
 
-#define OUT_BYTE_ARRAY(arr, len)  \
-	if (len == NULL) \
+#define OUT_BYTE_ARRAY(arr, len)          \
+	if (len == NULL)                  \
 		_ret = CKR_ARGUMENTS_BAD; \
 	OUT_BYTE_ARRAY2(arr, len);
 
-#define OUT_BYTE_ARRAY2(arr, len)  \
-	if (_ret == CKR_OK)		\
-		_ret = proto_read_byte_array (_cs->resp, (arr), (len), *(len));
+#define OUT_BYTE_ARRAY2(arr, len) \
+	if (_ret == CKR_OK)       \
+		_ret = proto_read_byte_array(_cs->resp, (arr), (len), *(len));
 
-#define OUT_ULONG_ARRAY(a, len) \
-	if (len == NULL) \
+#define OUT_ULONG_ARRAY(a, len)           \
+	if (len == NULL)                  \
 		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_ulong_array (_cs->resp, (a), (len), *(len));
+	if (_ret == CKR_OK)               \
+		_ret = proto_read_ulong_array(_cs->resp, (a), (len), *(len));
 
 #define OUT_ATTRIBUTE_ARRAY(arr, num) \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_attribute_array (_cs->resp, (arr), (num));
+	if (_ret == CKR_OK)           \
+		_ret = proto_read_attribute_array(_cs->resp, (arr), (num));
 
-#define OUT_INFO(info) \
-	if (info == NULL) \
+#define OUT_INFO(info)                    \
+	if (info == NULL)                 \
 		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_info (_cs->resp, info);
+	if (_ret == CKR_OK)               \
+		_ret = proto_read_info(_cs->resp, info);
 
-#define OUT_SLOT_INFO(info) \
-	if (info == NULL) \
+#define OUT_SLOT_INFO(info)               \
+	if (info == NULL)                 \
 		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_slot_info (_cs->resp, info);
+	if (_ret == CKR_OK)               \
+		_ret = proto_read_slot_info(_cs->resp, info);
 
-#define OUT_TOKEN_INFO(info) \
-	if (info == NULL) \
+#define OUT_TOKEN_INFO(info)              \
+	if (info == NULL)                 \
 		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_token_info (_cs->resp, info);
+	if (_ret == CKR_OK)               \
+		_ret = proto_read_token_info(_cs->resp, info);
 
-#define OUT_SESSION_INFO(info) \
-	if (info == NULL) \
+#define OUT_SESSION_INFO(info)            \
+	if (info == NULL)                 \
 		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_sesssion_info (_cs->resp, info);
+	if (_ret == CKR_OK)               \
+		_ret = proto_read_sesssion_info(_cs->resp, info);
 
-#define OUT_MECHANISM_TYPE_ARRAY(arr, len) \
-	if (len == NULL) \
-		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_ulong_array (_cs->resp, (arr), (len), *(len)); \
-	if (_ret == CKR_OK && arr) \
-		gck_rpc_mechanism_list_purge (arr, len);
+#define OUT_MECHANISM_TYPE_ARRAY(arr, len)                                      \
+	if (len == NULL)                                                        \
+		_ret = CKR_ARGUMENTS_BAD;                                       \
+	if (_ret == CKR_OK)                                                     \
+		_ret = proto_read_ulong_array(_cs->resp, (arr), (len), *(len)); \
+	if (_ret == CKR_OK && arr)                                              \
+		gck_rpc_mechanism_list_purge(arr, len);
 
-#define OUT_MECHANISM_INFO(info) \
-	if (info == NULL) \
+#define OUT_MECHANISM_INFO(info)          \
+	if (info == NULL)                 \
 		_ret = CKR_ARGUMENTS_BAD; \
-	if (_ret == CKR_OK) \
-		_ret = proto_read_mechanism_info (_cs->resp, info);
+	if (_ret == CKR_OK)               \
+		_ret = proto_read_mechanism_info(_cs->resp, info);
 
 /* -------------------------------------------------------------------
  * INITIALIZATION and 'GLOBAL' CALLS
  */
 
-static CK_RV rpc_C_Initialize(CK_VOID_PTR init_args)
+static CK_RV
+rpc_C_Initialize(CK_VOID_PTR init_args)
 {
 	CK_C_INITIALIZE_ARGS_PTR args = NULL;
 	CK_RV ret = CKR_OK;
@@ -1305,13 +1339,10 @@ static CK_RV rpc_C_Initialize(CK_VOID_PTR init_args)
 
 		/* XXX since we're never going to call the supplied mutex functions, shouldn't we reject them? */
 		/* ALL supplied function pointers need to have the value either NULL or non-NULL. */
-		supplied_ok = (args->CreateMutex == NULL
-			       && args->DestroyMutex == NULL
-			       && args->LockMutex == NULL
-			       && args->UnlockMutex == NULL)
-		    || (args->CreateMutex != NULL && args->DestroyMutex != NULL
-			&& args->LockMutex != NULL
-			&& args->UnlockMutex != NULL);
+		supplied_ok = (args->CreateMutex == NULL && args->DestroyMutex == NULL
+		               && args->LockMutex == NULL && args->UnlockMutex == NULL)
+		              || (args->CreateMutex != NULL && args->DestroyMutex != NULL
+		                  && args->LockMutex != NULL && args->UnlockMutex != NULL);
 		if (!supplied_ok) {
 			warning(("invalid set of mutex calls supplied"));
 			ret = CKR_ARGUMENTS_BAD;
@@ -1351,24 +1382,21 @@ static CK_RV rpc_C_Initialize(CK_VOID_PTR init_args)
 	if (pkcs11_socket_path[0] == 0) {
 		path = getenv("PKCS11_PROXY_SOCKET");
 		if (path && path[0]) {
-			if ((! strncmp("tcp://", path, 6)) ||
-			    (! strncmp("tls://", path, 6)))
-				snprintf(pkcs11_socket_path,
-					 sizeof(pkcs11_socket_path), "%s",
-					 path);
+			if ((!strncmp("tcp://", path, 6)) || (!strncmp("tls://", path, 6)))
+				snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path), "%s",
+				         path);
 			else
-				snprintf(pkcs11_socket_path,
-					 sizeof(pkcs11_socket_path),
-					 "%s.pkcs11", path);
+				snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path),
+				         "%s.pkcs11", path);
 			pkcs11_socket_path[sizeof(pkcs11_socket_path) - 1] = 0;
 		} else {
-			ret =  CKR_FUNCTION_NOT_SUPPORTED;
+			ret = CKR_FUNCTION_NOT_SUPPORTED;
 			goto done;
 		}
 	}
 
 	/* If socket path indicates TLS, verify required env vars are set. */
-	if (! strncmp("tls://", pkcs11_socket_path, 6)) {
+	if (!strncmp("tls://", pkcs11_socket_path, 6)) {
 		const char *ca = getenv("PKCS11_PROXY_TLS_CA");
 		if (!ca || !ca[0]) {
 			warning(("PKCS11_PROXY_TLS_CA is required for tls:// connections"));
@@ -1378,16 +1406,15 @@ static CK_RV rpc_C_Initialize(CK_VOID_PTR init_args)
 	}
 
 	srand(time(NULL) ^ pid);
-	pkcs11_app_id = (uint64_t) rand() << 32 | rand();
+	pkcs11_app_id = (uint64_t)rand() << 32 | rand();
 
 	/* Call through and initialize the daemon */
 	ret = call_lookup(&cs);
 	if (ret == CKR_OK) {
 		ret = call_prepare(cs, GCK_RPC_CALL_C_Initialize);
 		if (ret == CKR_OK)
-			if (!gck_rpc_message_write_byte_array
-			    (cs->req, (unsigned char *)GCK_RPC_HANDSHAKE,
-			     GCK_RPC_HANDSHAKE_LEN))
+			if (!gck_rpc_message_write_byte_array(
+			        cs->req, (unsigned char *)GCK_RPC_HANDSHAKE, GCK_RPC_HANDSHAKE_LEN))
 				ret = CKR_HOST_MEMORY;
 		if (ret == CKR_OK)
 			ret = call_run(cs);
@@ -1411,13 +1438,14 @@ done:
 	return ret;
 }
 
-static CK_RV rpc_C_Finalize(CK_VOID_PTR reserved)
+static CK_RV
+rpc_C_Finalize(CK_VOID_PTR reserved)
 {
 	CallState *cs;
 	CK_RV ret;
 
 	debug(("C_Finalize: enter"));
-	return_val_if_fail(! reserved, CKR_ARGUMENTS_BAD);
+	return_val_if_fail(!reserved, CKR_ARGUMENTS_BAD);
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
 	pthread_mutex_lock(&init_mutex);
@@ -1445,7 +1473,8 @@ static CK_RV rpc_C_Finalize(CK_VOID_PTR reserved)
 	return CKR_OK;
 }
 
-static CK_RV rpc_C_GetInfo(CK_INFO_PTR info)
+static CK_RV
+rpc_C_GetInfo(CK_INFO_PTR info)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(info, CKR_ARGUMENTS_BAD);
@@ -1456,15 +1485,15 @@ static CK_RV rpc_C_GetInfo(CK_INFO_PTR info)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR list)
+static CK_RV
+rpc_C_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR list)
 {
 	/* This would be a strange call to receive */
 	return C_GetFunctionList(list);
 }
 
 static CK_RV
-rpc_C_GetSlotList(CK_BBOOL token_present, CK_SLOT_ID_PTR slot_list,
-		  CK_ULONG_PTR count)
+rpc_C_GetSlotList(CK_BBOOL token_present, CK_SLOT_ID_PTR slot_list, CK_ULONG_PTR count)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(count, CKR_ARGUMENTS_BAD);
@@ -1477,7 +1506,8 @@ rpc_C_GetSlotList(CK_BBOOL token_present, CK_SLOT_ID_PTR slot_list,
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetSlotInfo(CK_SLOT_ID id, CK_SLOT_INFO_PTR info)
+static CK_RV
+rpc_C_GetSlotInfo(CK_SLOT_ID id, CK_SLOT_INFO_PTR info)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(info, CKR_ARGUMENTS_BAD);
@@ -1489,7 +1519,8 @@ static CK_RV rpc_C_GetSlotInfo(CK_SLOT_ID id, CK_SLOT_INFO_PTR info)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetTokenInfo(CK_SLOT_ID id, CK_TOKEN_INFO_PTR info)
+static CK_RV
+rpc_C_GetTokenInfo(CK_SLOT_ID id, CK_TOKEN_INFO_PTR info)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(info, CKR_ARGUMENTS_BAD);
@@ -1502,8 +1533,7 @@ static CK_RV rpc_C_GetTokenInfo(CK_SLOT_ID id, CK_TOKEN_INFO_PTR info)
 }
 
 static CK_RV
-rpc_C_GetMechanismList(CK_SLOT_ID id, CK_MECHANISM_TYPE_PTR mechanism_list,
-		       CK_ULONG_PTR count)
+rpc_C_GetMechanismList(CK_SLOT_ID id, CK_MECHANISM_TYPE_PTR mechanism_list, CK_ULONG_PTR count)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(count, CKR_ARGUMENTS_BAD);
@@ -1514,12 +1544,10 @@ rpc_C_GetMechanismList(CK_SLOT_ID id, CK_MECHANISM_TYPE_PTR mechanism_list,
 	PROCESS_CALL;
 	OUT_MECHANISM_TYPE_ARRAY(mechanism_list, count);
 	END_CALL;
-
 }
 
 static CK_RV
-rpc_C_GetMechanismInfo(CK_SLOT_ID id, CK_MECHANISM_TYPE type,
-		       CK_MECHANISM_INFO_PTR info)
+rpc_C_GetMechanismInfo(CK_SLOT_ID id, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR info)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(info, CKR_ARGUMENTS_BAD);
@@ -1533,8 +1561,7 @@ rpc_C_GetMechanismInfo(CK_SLOT_ID id, CK_MECHANISM_TYPE type,
 }
 
 static CK_RV
-rpc_C_InitToken(CK_SLOT_ID id, CK_UTF8CHAR_PTR pin, CK_ULONG pin_len,
-		CK_UTF8CHAR_PTR label)
+rpc_C_InitToken(CK_SLOT_ID id, CK_UTF8CHAR_PTR pin, CK_ULONG pin_len, CK_UTF8CHAR_PTR label)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1547,8 +1574,7 @@ rpc_C_InitToken(CK_SLOT_ID id, CK_UTF8CHAR_PTR pin, CK_ULONG pin_len,
 }
 
 static CK_RV
-rpc_C_WaitForSlotEvent(CK_FLAGS flags, CK_SLOT_ID_PTR slot,
-		       CK_VOID_PTR reserved)
+rpc_C_WaitForSlotEvent(CK_FLAGS flags, CK_SLOT_ID_PTR slot, CK_VOID_PTR reserved)
 {
 	(void)reserved;
 	return_val_if_fail(slot, CKR_ARGUMENTS_BAD);
@@ -1561,8 +1587,8 @@ rpc_C_WaitForSlotEvent(CK_FLAGS flags, CK_SLOT_ID_PTR slot,
 }
 
 static CK_RV
-rpc_C_OpenSession(CK_SLOT_ID id, CK_FLAGS flags, CK_VOID_PTR user_data,
-		  CK_NOTIFY callback, CK_SESSION_HANDLE_PTR session)
+rpc_C_OpenSession(CK_SLOT_ID id, CK_FLAGS flags, CK_VOID_PTR user_data, CK_NOTIFY callback,
+                  CK_SESSION_HANDLE_PTR session)
 {
 	(void)user_data;
 	(void)callback;
@@ -1579,7 +1605,8 @@ rpc_C_OpenSession(CK_SLOT_ID id, CK_FLAGS flags, CK_VOID_PTR user_data,
 	END_CALL;
 }
 
-static CK_RV rpc_C_CloseSession(CK_SESSION_HANDLE session)
+static CK_RV
+rpc_C_CloseSession(CK_SESSION_HANDLE session)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1589,7 +1616,8 @@ static CK_RV rpc_C_CloseSession(CK_SESSION_HANDLE session)
 	END_CALL;
 }
 
-static CK_RV rpc_C_CloseAllSessions(CK_SLOT_ID id)
+static CK_RV
+rpc_C_CloseAllSessions(CK_SLOT_ID id)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1599,7 +1627,8 @@ static CK_RV rpc_C_CloseAllSessions(CK_SLOT_ID id)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetFunctionStatus(CK_SESSION_HANDLE session)
+static CK_RV
+rpc_C_GetFunctionStatus(CK_SESSION_HANDLE session)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1609,7 +1638,8 @@ static CK_RV rpc_C_GetFunctionStatus(CK_SESSION_HANDLE session)
 	END_CALL;
 }
 
-static CK_RV rpc_C_CancelFunction(CK_SESSION_HANDLE session)
+static CK_RV
+rpc_C_CancelFunction(CK_SESSION_HANDLE session)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1645,9 +1675,8 @@ rpc_C_InitPIN(CK_SESSION_HANDLE session, CK_UTF8CHAR_PTR pin, CK_ULONG pin_len)
 }
 
 static CK_RV
-rpc_C_SetPIN(CK_SESSION_HANDLE session, CK_UTF8CHAR_PTR old_pin,
-	     CK_ULONG old_pin_len, CK_UTF8CHAR_PTR new_pin,
-	     CK_ULONG new_pin_len)
+rpc_C_SetPIN(CK_SESSION_HANDLE session, CK_UTF8CHAR_PTR old_pin, CK_ULONG old_pin_len,
+             CK_UTF8CHAR_PTR new_pin, CK_ULONG new_pin_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1661,7 +1690,7 @@ rpc_C_SetPIN(CK_SESSION_HANDLE session, CK_UTF8CHAR_PTR old_pin,
 
 static CK_RV
 rpc_C_GetOperationState(CK_SESSION_HANDLE session, CK_BYTE_PTR operation_state,
-			CK_ULONG_PTR operation_state_len)
+                        CK_ULONG_PTR operation_state_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1675,9 +1704,8 @@ rpc_C_GetOperationState(CK_SESSION_HANDLE session, CK_BYTE_PTR operation_state,
 
 static CK_RV
 rpc_C_SetOperationState(CK_SESSION_HANDLE session, CK_BYTE_PTR operation_state,
-			CK_ULONG operation_state_len,
-			CK_OBJECT_HANDLE encryption_key,
-			CK_OBJECT_HANDLE authentication_key)
+                        CK_ULONG operation_state_len, CK_OBJECT_HANDLE encryption_key,
+                        CK_OBJECT_HANDLE authentication_key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1691,8 +1719,8 @@ rpc_C_SetOperationState(CK_SESSION_HANDLE session, CK_BYTE_PTR operation_state,
 }
 
 static CK_RV
-rpc_C_Login(CK_SESSION_HANDLE session, CK_USER_TYPE user_type,
-	    CK_UTF8CHAR_PTR pin, CK_ULONG pin_len)
+rpc_C_Login(CK_SESSION_HANDLE session, CK_USER_TYPE user_type, CK_UTF8CHAR_PTR pin,
+            CK_ULONG pin_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1704,7 +1732,8 @@ rpc_C_Login(CK_SESSION_HANDLE session, CK_USER_TYPE user_type,
 	END_CALL;
 }
 
-static CK_RV rpc_C_Logout(CK_SESSION_HANDLE session)
+static CK_RV
+rpc_C_Logout(CK_SESSION_HANDLE session)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1715,8 +1744,8 @@ static CK_RV rpc_C_Logout(CK_SESSION_HANDLE session)
 }
 
 static CK_RV
-rpc_C_CreateObject(CK_SESSION_HANDLE session, CK_ATTRIBUTE_PTR template,
-		   CK_ULONG count, CK_OBJECT_HANDLE_PTR new_object)
+rpc_C_CreateObject(CK_SESSION_HANDLE session, CK_ATTRIBUTE_PTR template, CK_ULONG count,
+                   CK_OBJECT_HANDLE_PTR new_object)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(session != CK_INVALID_HANDLE, CKR_SESSION_HANDLE_INVALID);
@@ -1732,9 +1761,8 @@ rpc_C_CreateObject(CK_SESSION_HANDLE session, CK_ATTRIBUTE_PTR template,
 }
 
 static CK_RV
-rpc_C_CopyObject(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
-		 CK_ATTRIBUTE_PTR template, CK_ULONG count,
-		 CK_OBJECT_HANDLE_PTR new_object)
+rpc_C_CopyObject(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object, CK_ATTRIBUTE_PTR template,
+                 CK_ULONG count, CK_OBJECT_HANDLE_PTR new_object)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(new_object, CKR_ARGUMENTS_BAD);
@@ -1761,8 +1789,7 @@ rpc_C_DestroyObject(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object)
 }
 
 static CK_RV
-rpc_C_GetObjectSize(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
-		    CK_ULONG_PTR size)
+rpc_C_GetObjectSize(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object, CK_ULONG_PTR size)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(size, CKR_ARGUMENTS_BAD);
@@ -1777,7 +1804,7 @@ rpc_C_GetObjectSize(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
 
 static CK_RV
 rpc_C_GetAttributeValue(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
-			CK_ATTRIBUTE_PTR template, CK_ULONG count)
+                        CK_ATTRIBUTE_PTR template, CK_ULONG count)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(template, CKR_ARGUMENTS_BAD);
@@ -1793,7 +1820,7 @@ rpc_C_GetAttributeValue(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
 
 static CK_RV
 rpc_C_SetAttributeValue(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
-			CK_ATTRIBUTE_PTR template, CK_ULONG count)
+                        CK_ATTRIBUTE_PTR template, CK_ULONG count)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	BEGIN_CALL(C_SetAttributeValue);
@@ -1805,8 +1832,7 @@ rpc_C_SetAttributeValue(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE object,
 }
 
 static CK_RV
-rpc_C_FindObjectsInit(CK_SESSION_HANDLE session, CK_ATTRIBUTE_PTR template,
-		      CK_ULONG count)
+rpc_C_FindObjectsInit(CK_SESSION_HANDLE session, CK_ATTRIBUTE_PTR template, CK_ULONG count)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1818,8 +1844,8 @@ rpc_C_FindObjectsInit(CK_SESSION_HANDLE session, CK_ATTRIBUTE_PTR template,
 }
 
 static CK_RV
-rpc_C_FindObjects(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE_PTR objects,
-		  CK_ULONG max_count, CK_ULONG_PTR count)
+rpc_C_FindObjects(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE_PTR objects, CK_ULONG max_count,
+                  CK_ULONG_PTR count)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(count, CKR_ARGUMENTS_BAD);
@@ -1833,7 +1859,8 @@ rpc_C_FindObjects(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE_PTR objects,
 	END_CALL;
 }
 
-static CK_RV rpc_C_FindObjectsFinal(CK_SESSION_HANDLE session)
+static CK_RV
+rpc_C_FindObjectsFinal(CK_SESSION_HANDLE session)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	BEGIN_CALL(C_FindObjectsFinal);
@@ -1843,8 +1870,7 @@ static CK_RV rpc_C_FindObjectsFinal(CK_SESSION_HANDLE session)
 }
 
 static CK_RV
-rpc_C_EncryptInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		  CK_OBJECT_HANDLE key)
+rpc_C_EncryptInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1858,7 +1884,7 @@ rpc_C_EncryptInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 
 static CK_RV
 rpc_C_Encrypt(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
-	      CK_BYTE_PTR encrypted_data, CK_ULONG_PTR encrypted_data_len)
+              CK_BYTE_PTR encrypted_data, CK_ULONG_PTR encrypted_data_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	/* From PKCS#11 v2.01 :
@@ -1881,9 +1907,8 @@ rpc_C_Encrypt(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
 }
 
 static CK_RV
-rpc_C_EncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
-		    CK_ULONG part_len, CK_BYTE_PTR encrypted_part,
-		    CK_ULONG_PTR encrypted_part_len)
+rpc_C_EncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part, CK_ULONG part_len,
+                    CK_BYTE_PTR encrypted_part, CK_ULONG_PTR encrypted_part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1897,8 +1922,7 @@ rpc_C_EncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
 }
 
 static CK_RV
-rpc_C_EncryptFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR last_part,
-		   CK_ULONG_PTR last_part_len)
+rpc_C_EncryptFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR last_part, CK_ULONG_PTR last_part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1911,8 +1935,7 @@ rpc_C_EncryptFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR last_part,
 }
 
 static CK_RV
-rpc_C_DecryptInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		  CK_OBJECT_HANDLE key)
+rpc_C_DecryptInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1925,8 +1948,8 @@ rpc_C_DecryptInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_Decrypt(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_data,
-	      CK_ULONG enc_data_len, CK_BYTE_PTR data, CK_ULONG_PTR data_len)
+rpc_C_Decrypt(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_data, CK_ULONG enc_data_len,
+              CK_BYTE_PTR data, CK_ULONG_PTR data_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1940,9 +1963,8 @@ rpc_C_Decrypt(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_data,
 }
 
 static CK_RV
-rpc_C_DecryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part,
-		    CK_ULONG enc_part_len, CK_BYTE_PTR part,
-		    CK_ULONG_PTR part_len)
+rpc_C_DecryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part, CK_ULONG enc_part_len,
+                    CK_BYTE_PTR part, CK_ULONG_PTR part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1956,8 +1978,7 @@ rpc_C_DecryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part,
 }
 
 static CK_RV
-rpc_C_DecryptFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR last_part,
-		   CK_ULONG_PTR last_part_len)
+rpc_C_DecryptFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR last_part, CK_ULONG_PTR last_part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1981,8 +2002,8 @@ rpc_C_DigestInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism)
 }
 
 static CK_RV
-rpc_C_Digest(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
-	     CK_BYTE_PTR digest, CK_ULONG_PTR digest_len)
+rpc_C_Digest(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len, CK_BYTE_PTR digest,
+             CK_ULONG_PTR digest_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -1996,8 +2017,7 @@ rpc_C_Digest(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
 }
 
 static CK_RV
-rpc_C_DigestUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
-		   CK_ULONG part_len)
+rpc_C_DigestUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part, CK_ULONG part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2008,7 +2028,8 @@ rpc_C_DigestUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
 	END_CALL;
 }
 
-static CK_RV rpc_C_DigestKey(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key)
+static CK_RV
+rpc_C_DigestKey(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2020,8 +2041,7 @@ static CK_RV rpc_C_DigestKey(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key)
 }
 
 static CK_RV
-rpc_C_DigestFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR digest,
-		  CK_ULONG_PTR digest_len)
+rpc_C_DigestFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR digest, CK_ULONG_PTR digest_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2034,8 +2054,7 @@ rpc_C_DigestFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR digest,
 }
 
 static CK_RV
-rpc_C_SignInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-	       CK_OBJECT_HANDLE key)
+rpc_C_SignInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	BEGIN_CALL(C_SignInit);
@@ -2047,8 +2066,8 @@ rpc_C_SignInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_Sign(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
-	   CK_BYTE_PTR signature, CK_ULONG_PTR signature_len)
+rpc_C_Sign(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len, CK_BYTE_PTR signature,
+           CK_ULONG_PTR signature_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2075,8 +2094,7 @@ rpc_C_SignUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part, CK_ULONG part_len)
 }
 
 static CK_RV
-rpc_C_SignFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR signature,
-		CK_ULONG_PTR signature_len)
+rpc_C_SignFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR signature, CK_ULONG_PTR signature_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2089,8 +2107,7 @@ rpc_C_SignFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR signature,
 }
 
 static CK_RV
-rpc_C_SignRecoverInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		      CK_OBJECT_HANDLE key)
+rpc_C_SignRecoverInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2103,9 +2120,8 @@ rpc_C_SignRecoverInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_SignRecover(CK_SESSION_HANDLE session, CK_BYTE_PTR data,
-		  CK_ULONG data_len, CK_BYTE_PTR signature,
-		  CK_ULONG_PTR signature_len)
+rpc_C_SignRecover(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
+                  CK_BYTE_PTR signature, CK_ULONG_PTR signature_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2119,8 +2135,7 @@ rpc_C_SignRecover(CK_SESSION_HANDLE session, CK_BYTE_PTR data,
 }
 
 static CK_RV
-rpc_C_VerifyInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		 CK_OBJECT_HANDLE key)
+rpc_C_VerifyInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2133,8 +2148,8 @@ rpc_C_VerifyInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_Verify(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
-	     CK_BYTE_PTR signature, CK_ULONG signature_len)
+rpc_C_Verify(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len, CK_BYTE_PTR signature,
+             CK_ULONG signature_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2147,8 +2162,7 @@ rpc_C_Verify(CK_SESSION_HANDLE session, CK_BYTE_PTR data, CK_ULONG data_len,
 }
 
 static CK_RV
-rpc_C_VerifyUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
-		   CK_ULONG part_len)
+rpc_C_VerifyUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part, CK_ULONG part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2160,8 +2174,7 @@ rpc_C_VerifyUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
 }
 
 static CK_RV
-rpc_C_VerifyFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR signature,
-		  CK_ULONG signature_len)
+rpc_C_VerifyFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR signature, CK_ULONG signature_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2173,8 +2186,7 @@ rpc_C_VerifyFinal(CK_SESSION_HANDLE session, CK_BYTE_PTR signature,
 }
 
 static CK_RV
-rpc_C_VerifyRecoverInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-			CK_OBJECT_HANDLE key)
+rpc_C_VerifyRecoverInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2187,9 +2199,8 @@ rpc_C_VerifyRecoverInit(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_VerifyRecover(CK_SESSION_HANDLE session, CK_BYTE_PTR signature,
-		    CK_ULONG signature_len, CK_BYTE_PTR data,
-		    CK_ULONG_PTR data_len)
+rpc_C_VerifyRecover(CK_SESSION_HANDLE session, CK_BYTE_PTR signature, CK_ULONG signature_len,
+                    CK_BYTE_PTR data, CK_ULONG_PTR data_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2203,9 +2214,8 @@ rpc_C_VerifyRecover(CK_SESSION_HANDLE session, CK_BYTE_PTR signature,
 }
 
 static CK_RV
-rpc_C_DigestEncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
-			  CK_ULONG part_len, CK_BYTE_PTR enc_part,
-			  CK_ULONG_PTR enc_part_len)
+rpc_C_DigestEncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part, CK_ULONG part_len,
+                          CK_BYTE_PTR enc_part, CK_ULONG_PTR enc_part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2219,9 +2229,8 @@ rpc_C_DigestEncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
 }
 
 static CK_RV
-rpc_C_DecryptDigestUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part,
-			  CK_ULONG enc_part_len, CK_BYTE_PTR part,
-			  CK_ULONG_PTR part_len)
+rpc_C_DecryptDigestUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part, CK_ULONG enc_part_len,
+                          CK_BYTE_PTR part, CK_ULONG_PTR part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2235,9 +2244,8 @@ rpc_C_DecryptDigestUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part,
 }
 
 static CK_RV
-rpc_C_SignEncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
-			CK_ULONG part_len, CK_BYTE_PTR enc_part,
-			CK_ULONG_PTR enc_part_len)
+rpc_C_SignEncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part, CK_ULONG part_len,
+                        CK_BYTE_PTR enc_part, CK_ULONG_PTR enc_part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2251,9 +2259,8 @@ rpc_C_SignEncryptUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR part,
 }
 
 static CK_RV
-rpc_C_DecryptVerifyUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part,
-			  CK_ULONG enc_part_len, CK_BYTE_PTR part,
-			  CK_ULONG_PTR part_len)
+rpc_C_DecryptVerifyUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part, CK_ULONG enc_part_len,
+                          CK_BYTE_PTR part, CK_ULONG_PTR part_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2267,9 +2274,8 @@ rpc_C_DecryptVerifyUpdate(CK_SESSION_HANDLE session, CK_BYTE_PTR enc_part,
 }
 
 static CK_RV
-rpc_C_GenerateKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		  CK_ATTRIBUTE_PTR template, CK_ULONG count,
-		  CK_OBJECT_HANDLE_PTR key)
+rpc_C_GenerateKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_ATTRIBUTE_PTR template,
+                  CK_ULONG count, CK_OBJECT_HANDLE_PTR key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2284,10 +2290,9 @@ rpc_C_GenerateKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 
 static CK_RV
 rpc_C_GenerateKeyPair(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		      CK_ATTRIBUTE_PTR pub_template, CK_ULONG pub_count,
-		      CK_ATTRIBUTE_PTR priv_template, CK_ULONG priv_count,
-		      CK_OBJECT_HANDLE_PTR pub_key,
-		      CK_OBJECT_HANDLE_PTR priv_key)
+                      CK_ATTRIBUTE_PTR pub_template, CK_ULONG pub_count,
+                      CK_ATTRIBUTE_PTR priv_template, CK_ULONG priv_count,
+                      CK_OBJECT_HANDLE_PTR pub_key, CK_OBJECT_HANDLE_PTR priv_key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(session != CK_INVALID_HANDLE, CKR_SESSION_HANDLE_INVALID);
@@ -2309,9 +2314,8 @@ rpc_C_GenerateKeyPair(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_WrapKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-	      CK_OBJECT_HANDLE wrapping_key, CK_OBJECT_HANDLE key,
-	      CK_BYTE_PTR wrapped_key, CK_ULONG_PTR wrapped_key_len)
+rpc_C_WrapKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE wrapping_key,
+              CK_OBJECT_HANDLE key, CK_BYTE_PTR wrapped_key, CK_ULONG_PTR wrapped_key_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2328,9 +2332,8 @@ rpc_C_WrapKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 
 static CK_RV
 rpc_C_UnwrapKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		CK_OBJECT_HANDLE unwrapping_key, CK_BYTE_PTR wrapped_key,
-		CK_ULONG wrapped_key_len, CK_ATTRIBUTE_PTR template,
-		CK_ULONG count, CK_OBJECT_HANDLE_PTR key)
+                CK_OBJECT_HANDLE unwrapping_key, CK_BYTE_PTR wrapped_key, CK_ULONG wrapped_key_len,
+                CK_ATTRIBUTE_PTR template, CK_ULONG count, CK_OBJECT_HANDLE_PTR key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2346,9 +2349,8 @@ rpc_C_UnwrapKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
 }
 
 static CK_RV
-rpc_C_DeriveKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism,
-		CK_OBJECT_HANDLE base_key, CK_ATTRIBUTE_PTR template,
-		CK_ULONG count, CK_OBJECT_HANDLE_PTR key)
+rpc_C_DeriveKey(CK_SESSION_HANDLE session, CK_MECHANISM_PTR mechanism, CK_OBJECT_HANDLE base_key,
+                CK_ATTRIBUTE_PTR template, CK_ULONG count, CK_OBJECT_HANDLE_PTR key)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 
@@ -2375,8 +2377,7 @@ rpc_C_SeedRandom(CK_SESSION_HANDLE session, CK_BYTE_PTR seed, CK_ULONG seed_len)
 }
 
 static CK_RV
-rpc_C_GenerateRandom(CK_SESSION_HANDLE session, CK_BYTE_PTR random_data,
-		     CK_ULONG random_len)
+rpc_C_GenerateRandom(CK_SESSION_HANDLE session, CK_BYTE_PTR random_data, CK_ULONG random_len)
 {
 	return_val_if_fail(pkcs11_initialized, CKR_CRYPTOKI_NOT_INITIALIZED);
 	return_val_if_fail(random_data, CKR_ARGUMENTS_BAD);
@@ -2402,8 +2403,8 @@ rpc_C_GenerateRandom(CK_SESSION_HANDLE session, CK_BYTE_PTR random_data,
  * is compiled.
  */
 
-static CK_FUNCTION_LIST functionList = {
-	{CRYPTOKI_VERSION_MAJOR, CRYPTOKI_VERSION_MINOR},	/* version */
+static CK_FUNCTION_LIST functionList
+    = { { CRYPTOKI_VERSION_MAJOR, CRYPTOKI_VERSION_MINOR }, /* version */
 	rpc_C_Initialize,
 	rpc_C_Finalize,
 	rpc_C_GetInfo,
@@ -2471,10 +2472,10 @@ static CK_FUNCTION_LIST functionList = {
 	rpc_C_GenerateRandom,
 	rpc_C_GetFunctionStatus,
 	rpc_C_CancelFunction,
-	rpc_C_WaitForSlotEvent
-};
+	rpc_C_WaitForSlotEvent };
 
-CK_RV C_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR list)
+CK_RV
+C_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR list)
 {
 	return_val_if_fail(list, CKR_ARGUMENTS_BAD);
 

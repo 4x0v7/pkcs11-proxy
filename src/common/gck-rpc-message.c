@@ -34,19 +34,20 @@
 #include <assert.h>
 #endif
 
-GckRpcMessage *gck_rpc_message_new(EggBufferAllocator allocator)
+GckRpcMessage *
+gck_rpc_message_new(EggBufferAllocator allocator)
 {
 	GckRpcMessage *msg;
 
 	assert(allocator);
 
-	msg = (GckRpcMessage *) (allocator) (NULL, sizeof(GckRpcMessage));
+	msg = (GckRpcMessage *)(allocator)(NULL, sizeof(GckRpcMessage));
 	if (!msg)
 		return NULL;
 	memset(msg, 0, sizeof(*msg));
 
 	if (!egg_buffer_init_full(&msg->buffer, 64, allocator)) {
-		(allocator) (msg, 0);	/* Frees allocation */
+		(allocator)(msg, 0); /* Frees allocation */
 		return NULL;
 	}
 
@@ -55,7 +56,8 @@ GckRpcMessage *gck_rpc_message_new(EggBufferAllocator allocator)
 	return msg;
 }
 
-void gck_rpc_message_free(GckRpcMessage * msg)
+void
+gck_rpc_message_free(GckRpcMessage *msg)
 {
 	EggBufferAllocator allocator;
 
@@ -65,11 +67,12 @@ void gck_rpc_message_free(GckRpcMessage * msg)
 		egg_buffer_uninit(&msg->buffer);
 
 		/* frees data buffer */
-		(allocator) (msg, 0);
+		(allocator)(msg, 0);
 	}
 }
 
-void gck_rpc_message_reset(GckRpcMessage * msg)
+void
+gck_rpc_message_reset(GckRpcMessage *msg)
 {
 	assert(msg);
 
@@ -83,7 +86,7 @@ void gck_rpc_message_reset(GckRpcMessage * msg)
 }
 
 int
-gck_rpc_message_prep(GckRpcMessage * msg, int call_id, GckRpcMessageType type)
+gck_rpc_message_prep(GckRpcMessage *msg, int call_id, GckRpcMessageType type)
 {
 	int len;
 
@@ -113,15 +116,15 @@ gck_rpc_message_prep(GckRpcMessage * msg, int call_id, GckRpcMessageType type)
 	egg_buffer_add_uint32(&msg->buffer, call_id);
 	if (msg->signature) {
 		len = strlen(msg->signature);
-		egg_buffer_add_byte_array(&msg->buffer,
-					  (unsigned char *)msg->signature, len);
+		egg_buffer_add_byte_array(&msg->buffer, (unsigned char *)msg->signature, len);
 	}
 
 	msg->parsed = 0;
 	return !egg_buffer_has_error(&msg->buffer);
 }
 
-int gck_rpc_message_parse(GckRpcMessage * msg, GckRpcMessageType type)
+int
+gck_rpc_message_parse(GckRpcMessage *msg, GckRpcMessageType type)
 {
 	const unsigned char *val;
 	size_t len;
@@ -130,8 +133,7 @@ int gck_rpc_message_parse(GckRpcMessage * msg, GckRpcMessageType type)
 	msg->parsed = 0;
 
 	/* Pull out the call identifier */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &(msg->parsed), &call_id)) {
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &(msg->parsed), &call_id)) {
 		gck_rpc_warn("invalid message: couldn't read call identifier");
 		return 0;
 	}
@@ -164,14 +166,12 @@ int gck_rpc_message_parse(GckRpcMessage * msg, GckRpcMessageType type)
 	msg->sigverify = msg->signature;
 
 	/* Verify the incoming signature */
-	if (!egg_buffer_get_byte_array
-	    (&msg->buffer, msg->parsed, &(msg->parsed), &val, &len)) {
+	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &(msg->parsed), &val, &len)) {
 		gck_rpc_warn("invalid message: couldn't read signature");
 		return 0;
 	}
 
-	if ((strlen(msg->signature) != len)
-	    || (memcmp(val, msg->signature, len) != 0)) {
+	if ((strlen(msg->signature) != len) || (memcmp(val, msg->signature, len) != 0)) {
 		gck_rpc_warn("invalid message: signature doesn't match");
 		return 0;
 	}
@@ -179,13 +179,13 @@ int gck_rpc_message_parse(GckRpcMessage * msg, GckRpcMessageType type)
 	return 1;
 }
 
-int gck_rpc_message_equals(GckRpcMessage * m1, GckRpcMessage * m2)
+int
+gck_rpc_message_equals(GckRpcMessage *m1, GckRpcMessage *m2)
 {
 	assert(m1 && m2);
 
 	/* Any errors and messages are never equal */
-	if (egg_buffer_has_error(&m1->buffer) ||
-	    egg_buffer_has_error(&m2->buffer))
+	if (egg_buffer_has_error(&m1->buffer) || egg_buffer_has_error(&m2->buffer))
 		return 0;
 
 	/* Calls and signatures must be identical */
@@ -204,7 +204,8 @@ int gck_rpc_message_equals(GckRpcMessage * m1, GckRpcMessage * m2)
 	return egg_buffer_equal(&m1->buffer, &m2->buffer);
 }
 
-int gck_rpc_message_verify_part(GckRpcMessage * msg, const char *part)
+int
+gck_rpc_message_verify_part(GckRpcMessage *msg, const char *part)
 {
 	int len, ok;
 
@@ -219,8 +220,7 @@ int gck_rpc_message_verify_part(GckRpcMessage * msg, const char *part)
 }
 
 int
-gck_rpc_message_write_attribute_buffer(GckRpcMessage * msg,
-				       CK_ATTRIBUTE_PTR arr, CK_ULONG num)
+gck_rpc_message_write_attribute_buffer(GckRpcMessage *msg, CK_ATTRIBUTE_PTR arr, CK_ULONG num)
 {
 	CK_ATTRIBUTE_PTR attr;
 	CK_ULONG i;
@@ -241,16 +241,14 @@ gck_rpc_message_write_attribute_buffer(GckRpcMessage * msg,
 		egg_buffer_add_uint32(&msg->buffer, attr->type);
 
 		/* And the attribute buffer length */
-		egg_buffer_add_uint32(&msg->buffer,
-				      attr->pValue ? attr->ulValueLen : 0);
+		egg_buffer_add_uint32(&msg->buffer, attr->pValue ? attr->ulValueLen : 0);
 	}
 
 	return !egg_buffer_has_error(&msg->buffer);
 }
 
 int
-gck_rpc_message_write_attribute_array(GckRpcMessage * msg,
-				      CK_ATTRIBUTE_PTR arr, CK_ULONG num)
+gck_rpc_message_write_attribute_array(GckRpcMessage *msg, CK_ATTRIBUTE_PTR arr, CK_ULONG num)
 {
 	CK_ULONG i;
 	CK_ATTRIBUTE_PTR attr;
@@ -272,7 +270,7 @@ gck_rpc_message_write_attribute_array(GckRpcMessage * msg,
 		egg_buffer_add_uint32(&msg->buffer, attr->type);
 
 		/* Write out the attribute validity */
-		validity = (((CK_LONG) attr->ulValueLen) == -1) ? 0 : 1;
+		validity = (((CK_LONG)attr->ulValueLen) == -1) ? 0 : 1;
 		egg_buffer_add_byte(&msg->buffer, validity);
 
 		/* The attribute length and value */
@@ -281,27 +279,29 @@ gck_rpc_message_write_attribute_array(GckRpcMessage * msg,
 			if (gck_rpc_has_bad_sized_ulong_parameter(attr)) {
 				uint64_t val = *(CK_ULONG *)attr->pValue;
 
-				egg_buffer_add_byte_array (&msg->buffer, (unsigned char *)&val, sizeof (val));
+				egg_buffer_add_byte_array(&msg->buffer, (unsigned char *)&val,
+				                          sizeof(val));
 			} else
 				egg_buffer_add_byte_array(&msg->buffer, attr->pValue,
-							  attr->ulValueLen);
+				                          attr->ulValueLen);
 		}
 	}
 
 	return !egg_buffer_has_error(&msg->buffer);
 }
 
-int gck_rpc_message_read_byte(GckRpcMessage * msg, CK_BYTE * val)
+int
+gck_rpc_message_read_byte(GckRpcMessage *msg, CK_BYTE *val)
 {
 	assert(msg);
 
 	/* Make sure this is in the right order */
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "y"));
-	return egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed,
-				   val);
+	return egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, val);
 }
 
-int gck_rpc_message_write_byte(GckRpcMessage * msg, CK_BYTE val)
+int
+gck_rpc_message_write_byte(GckRpcMessage *msg, CK_BYTE val)
 {
 	assert(msg);
 
@@ -310,7 +310,8 @@ int gck_rpc_message_write_byte(GckRpcMessage * msg, CK_BYTE val)
 	return egg_buffer_add_byte(&msg->buffer, val);
 }
 
-int gck_rpc_message_read_ulong(GckRpcMessage * msg, CK_ULONG * val)
+int
+gck_rpc_message_read_ulong(GckRpcMessage *msg, CK_ULONG *val)
 {
 	uint64_t v;
 	assert(msg);
@@ -321,11 +322,12 @@ int gck_rpc_message_read_ulong(GckRpcMessage * msg, CK_ULONG * val)
 	if (!egg_buffer_get_uint64(&msg->buffer, msg->parsed, &msg->parsed, &v))
 		return 0;
 	if (val)
-		*val = (CK_ULONG) v;
+		*val = (CK_ULONG)v;
 	return 1;
 }
 
-int gck_rpc_message_write_ulong(GckRpcMessage * msg, CK_ULONG val)
+int
+gck_rpc_message_write_ulong(GckRpcMessage *msg, CK_ULONG val)
 {
 	assert(msg);
 
@@ -334,7 +336,8 @@ int gck_rpc_message_write_ulong(GckRpcMessage * msg, CK_ULONG val)
 	return egg_buffer_add_uint64(&msg->buffer, val);
 }
 
-int gck_rpc_message_write_byte_buffer(GckRpcMessage * msg, CK_BYTE_PTR arr, CK_ULONG *count_ptr)
+int
+gck_rpc_message_write_byte_buffer(GckRpcMessage *msg, CK_BYTE_PTR arr, CK_ULONG *count_ptr)
 {
 	uint8_t flags;
 	assert(msg);
@@ -343,9 +346,9 @@ int gck_rpc_message_write_byte_buffer(GckRpcMessage * msg, CK_BYTE_PTR arr, CK_U
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "fy"));
 
 	flags = 0;
-	if (! arr)
+	if (!arr)
 		flags |= GCK_RPC_BYTE_BUFFER_NULL_DATA;
-	if (! count_ptr)
+	if (!count_ptr)
 		flags |= GCK_RPC_BYTE_BUFFER_NULL_COUNT;
 
 	egg_buffer_add_byte(&msg->buffer, flags);
@@ -356,8 +359,7 @@ int gck_rpc_message_write_byte_buffer(GckRpcMessage * msg, CK_BYTE_PTR arr, CK_U
 }
 
 int
-gck_rpc_message_write_byte_array(GckRpcMessage * msg, CK_BYTE_PTR arr,
-				 CK_ULONG num)
+gck_rpc_message_write_byte_array(GckRpcMessage *msg, CK_BYTE_PTR arr, CK_ULONG num)
 {
 	assert(msg);
 
@@ -376,7 +378,8 @@ gck_rpc_message_write_byte_array(GckRpcMessage * msg, CK_BYTE_PTR arr,
 	return !egg_buffer_has_error(&msg->buffer);
 }
 
-int gck_rpc_message_write_ulong_buffer(GckRpcMessage * msg, CK_ULONG count)
+int
+gck_rpc_message_write_ulong_buffer(GckRpcMessage *msg, CK_ULONG count)
 {
 	assert(msg);
 
@@ -386,8 +389,7 @@ int gck_rpc_message_write_ulong_buffer(GckRpcMessage * msg, CK_ULONG count)
 }
 
 int
-gck_rpc_message_write_ulong_array(GckRpcMessage * msg, CK_ULONG_PTR array,
-				  CK_ULONG n_array)
+gck_rpc_message_write_ulong_array(GckRpcMessage *msg, CK_ULONG_PTR array, CK_ULONG n_array)
 {
 	CK_ULONG i;
 
@@ -409,7 +411,8 @@ gck_rpc_message_write_ulong_array(GckRpcMessage * msg, CK_ULONG_PTR array,
 	return !egg_buffer_has_error(&msg->buffer);
 }
 
-int gck_rpc_message_read_version(GckRpcMessage * msg, CK_VERSION * version)
+int
+gck_rpc_message_read_version(GckRpcMessage *msg, CK_VERSION *version)
 {
 	assert(msg);
 	assert(version);
@@ -417,13 +420,12 @@ int gck_rpc_message_read_version(GckRpcMessage * msg, CK_VERSION * version)
 	/* Check that we're supposed to have this at this point */
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "v"));
 
-	return egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed,
-				   &version->major)
-	    && egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed,
-				   &version->minor);
+	return egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &version->major)
+	       && egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &version->minor);
 }
 
-int gck_rpc_message_write_version(GckRpcMessage * msg, CK_VERSION * version)
+int
+gck_rpc_message_write_version(GckRpcMessage *msg, CK_VERSION *version)
 {
 	assert(msg);
 	assert(version);
@@ -438,8 +440,7 @@ int gck_rpc_message_write_version(GckRpcMessage * msg, CK_VERSION * version)
 }
 
 int
-gck_rpc_message_read_space_string(GckRpcMessage * msg, CK_UTF8CHAR * buffer,
-				  CK_ULONG length)
+gck_rpc_message_read_space_string(GckRpcMessage *msg, CK_UTF8CHAR *buffer, CK_ULONG length)
 {
 	const unsigned char *data;
 	size_t n_data;
@@ -450,14 +451,12 @@ gck_rpc_message_read_space_string(GckRpcMessage * msg, CK_UTF8CHAR * buffer,
 
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "s"));
 
-	if (!egg_buffer_get_byte_array
-	    (&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
+	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
 		return 0;
 
 	if (n_data != length) {
-		gck_rpc_warn
-		    ("invalid length space padded string received: %d != %d",
-		     length, n_data);
+		gck_rpc_warn("invalid length space padded string received: %d != %d", length,
+		             n_data);
 		return 0;
 	}
 
@@ -466,8 +465,7 @@ gck_rpc_message_read_space_string(GckRpcMessage * msg, CK_UTF8CHAR * buffer,
 }
 
 int
-gck_rpc_message_write_space_string(GckRpcMessage * msg, CK_UTF8CHAR * buffer,
-				   CK_ULONG length)
+gck_rpc_message_write_space_string(GckRpcMessage *msg, CK_UTF8CHAR *buffer, CK_ULONG length)
 {
 	assert(msg);
 	assert(buffer);

@@ -26,17 +26,14 @@
 #define GCKRPC_TLS_H_
 
 #include "openssl/bio.h"
-#include "openssl/ssl.h"
 #include "openssl/err.h"
+#include "openssl/ssl.h"
 
 #if OPENSSL_VERSION_NUMBER < 0x10101000L
-# error "OpenSSL version >= 1.1.1 required (TLS 1.3 support)"
+#error "OpenSSL version >= 1.1.1 required (TLS 1.3 support)"
 #endif
 
-enum gck_rpc_tls_caller {
-	GCK_RPC_TLS_CLIENT,
-	GCK_RPC_TLS_SERVER
-};
+enum gck_rpc_tls_caller { GCK_RPC_TLS_CLIENT, GCK_RPC_TLS_SERVER };
 
 typedef struct {
 	int initialized;
@@ -76,8 +73,7 @@ int gck_rpc_start_tls(GckRpcTlsState *state, int sock);
 /* Per-connection TLS: create SSL/BIO from shared ssl_ctx.
  * Returns 1 on success, 0 on failure. Outputs via out_ssl/out_bio.
  */
-int gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
-			   SSL **out_ssl, BIO **out_bio);
+int gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_bio);
 
 /* Send data over TLS. Returns bytes written, or 0 on error. */
 int gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len);

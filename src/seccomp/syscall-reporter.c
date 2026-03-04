@@ -18,11 +18,12 @@
 
 #include "syscall-names.h"
 
-const char * const msg_needed = "Looks like you also need syscall: ";
+const char *const msg_needed = "Looks like you also need syscall: ";
 
 /* Since "sprintf" is technically not signal-safe, reimplement %d here. */
 #ifdef SECCOMP
-static void write_uint(char *buf, unsigned int val)
+static void
+write_uint(char *buf, unsigned int val)
 {
 	int width = 0;
 	unsigned int tens;
@@ -32,13 +33,14 @@ static void write_uint(char *buf, unsigned int val)
 		return;
 	}
 	for (tens = val; tens; tens /= 10)
-		++ width;
+		++width;
 	buf[width] = '\0';
 	for (tens = val; tens; tens /= 10)
 		buf[--width] = '0' + (tens % 10);
 }
 
-static void reporter(int nr, siginfo_t *info, void *void_context)
+static void
+reporter(int nr, siginfo_t *info, void *void_context)
 {
 	char buf[128];
 	ucontext_t *ctx = (ucontext_t *)(void_context);
@@ -63,7 +65,8 @@ static void reporter(int nr, siginfo_t *info, void *void_context)
 }
 #endif
 
-int install_syscall_reporter(void)
+int
+install_syscall_reporter(void)
 {
 #ifdef SECCOMP
 	struct sigaction act;

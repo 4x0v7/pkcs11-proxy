@@ -31,35 +31,35 @@
 #include "pkcs11/pkcs11g.h"
 #include "pkcs11/pkcs11i.h"
 
-#include <sys/types.h>
 #include <sys/param.h>
+#include <sys/types.h>
 #ifdef __MINGW32__
-# include <winsock2.h>
+#include <winsock2.h>
 #else
-# include <sys/socket.h>
-# include <sys/un.h>
-# include <arpa/inet.h>
-# include <netinet/in.h>
-# include <netinet/tcp.h>
-# include <sys/types.h>
-# include <netdb.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/un.h>
 #endif
 #include <pthread.h>
 
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <errno.h>
-#include <stdio.h>
 
 #ifdef SECCOMP
 #include <seccomp.h>
 //#include "seccomp-bpf.h"
 #ifdef DEBUG_SECCOMP
-# include "syscall-reporter.h"
-#endif /* DEBUG_SECCOMP */
+#include "syscall-reporter.h"
+#endif             /* DEBUG_SECCOMP */
 #include <fcntl.h> /* for seccomp init */
-#endif /* SECCOMP */
+#endif             /* SECCOMP */
 #include <sys/mman.h>
 
 /* Where we dispatch the calls to */
@@ -81,8 +81,8 @@ typedef struct _CallState {
 	uint64_t appid;
 	int call;
 	int sock;
-        int (*read)(void *cs, unsigned char *,size_t);
-        int (*write)(void *cs, unsigned char *,size_t);
+	int (*read)(void *cs, unsigned char *, size_t);
+	int (*write)(void *cs, unsigned char *, size_t);
 	struct sockaddr_storage addr;
 	socklen_t addrlen;
 	/* XXX Maybe sessions should be a linked list instead, to remove the hard
@@ -125,10 +125,14 @@ static int _install_dispatch_syscall_filter(int use_tls);
 
 #define warning(x) gck_rpc_warn x
 
-#define return_val_if_fail(x, v) \
-	if (!(x)) { rpc_warn ("'%s' not true at %s", #x, __func__); return v; }
+#define return_val_if_fail(x, v)                               \
+	if (!(x)) {                                            \
+		rpc_warn("'%s' not true at %s", #x, __func__); \
+		return v;                                      \
+	}
 
-void gck_rpc_log(const char *msg, ...)
+void
+gck_rpc_log(const char *msg, ...)
 {
 	va_list ap;
 
@@ -142,12 +146,13 @@ void gck_rpc_log(const char *msg, ...)
  * CALL STRUCTURES
  */
 
-static int call_init(CallState * cs)
+static int
+call_init(CallState *cs)
 {
 	assert(cs);
 
-	cs->req = gck_rpc_message_new((EggBufferAllocator) realloc);
-	cs->resp = gck_rpc_message_new((EggBufferAllocator) realloc);
+	cs->req = gck_rpc_message_new((EggBufferAllocator)realloc);
+	cs->resp = gck_rpc_message_new((EggBufferAllocator)realloc);
 	if (!cs->req || !cs->resp) {
 		gck_rpc_message_free(cs->req);
 		gck_rpc_message_free(cs->resp);
@@ -158,7 +163,8 @@ static int call_init(CallState * cs)
 	return 1;
 }
 
-static void *call_alloc(CallState * cs, size_t length)
+static void *
+call_alloc(CallState *cs, size_t length)
 {
 	void **data;
 
@@ -182,7 +188,8 @@ static void *call_alloc(CallState * cs, size_t length)
 	return (void *)(data + 1);
 }
 
-static void call_reset(CallState * cs)
+static void
+call_reset(CallState *cs)
 {
 	void *allocated;
 	void **data;
@@ -203,7 +210,8 @@ static void call_reset(CallState * cs)
 	gck_rpc_message_reset(cs->resp);
 }
 
-static void call_uninit(CallState * cs)
+static void
+call_uninit(CallState *cs)
 {
 	assert(cs);
 
@@ -224,8 +232,7 @@ static void call_uninit(CallState * cs)
  */
 
 static CK_RV
-proto_read_byte_buffer(CallState * cs, CK_BYTE_PTR * buffer,
-		       CK_ULONG_PTR * n_buffer)
+proto_read_byte_buffer(CallState *cs, CK_BYTE_PTR *buffer, CK_ULONG_PTR *n_buffer)
 {
 	GckRpcMessage *msg;
 	uint8_t flags;
@@ -240,15 +247,12 @@ proto_read_byte_buffer(CallState * cs, CK_BYTE_PTR * buffer,
 	/* Check that we're supposed to be reading this at this point */
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "fy"));
 
-	if (!egg_buffer_get_byte
-	    (&msg->buffer, msg->parsed, &msg->parsed, &flags))
+	if (!egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &flags))
 		return PARSE_ERROR;
 
 	/* The number of ulongs there's room for on the other end */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &length))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &length))
 		return PARSE_ERROR;
-
 
 	**n_buffer = length;
 	*buffer = NULL_PTR;
@@ -256,7 +260,7 @@ proto_read_byte_buffer(CallState * cs, CK_BYTE_PTR * buffer,
 	if ((flags & GCK_RPC_BYTE_BUFFER_NULL_COUNT))
 		*n_buffer = NULL_PTR;
 
-	if (! (flags & GCK_RPC_BYTE_BUFFER_NULL_DATA)) {
+	if (!(flags & GCK_RPC_BYTE_BUFFER_NULL_DATA)) {
 		*buffer = call_alloc(cs, length * sizeof(CK_BYTE));
 		if (!*buffer)
 			return CKR_DEVICE_MEMORY;
@@ -266,7 +270,7 @@ proto_read_byte_buffer(CallState * cs, CK_BYTE_PTR * buffer,
 }
 
 static CK_RV
-proto_read_byte_array(CallState * cs, CK_BYTE_PTR * array, CK_ULONG * n_array)
+proto_read_byte_array(CallState *cs, CK_BYTE_PTR *array, CK_ULONG *n_array)
 {
 	GckRpcMessage *msg;
 	const unsigned char *data;
@@ -281,34 +285,30 @@ proto_read_byte_array(CallState * cs, CK_BYTE_PTR * array, CK_ULONG * n_array)
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "ay"));
 
 	/* Read out the byte which says whether data is present or not */
-	if (!egg_buffer_get_byte
-	    (&msg->buffer, msg->parsed, &msg->parsed, &valid))
+	if (!egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &valid))
 		return PARSE_ERROR;
 
 	if (!valid) {
 		uint32_t n_size;
 		/* No array, no data, just length */
-		if (!egg_buffer_get_uint32
-		    (&msg->buffer, msg->parsed, &msg->parsed, &n_size))
+		if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &n_size))
 			return PARSE_ERROR;
-		*n_array = (size_t) n_size;
+		*n_array = (size_t)n_size;
 		*array = NULL;
 		return CKR_OK;
 	}
 
 	/* Point our arguments into the buffer */
-	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed,
-				       &data, &n_data))
+	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
 		return PARSE_ERROR;
 
-	*array = (CK_BYTE_PTR) data;
+	*array = (CK_BYTE_PTR)data;
 	*n_array = n_data;
 	return CKR_OK;
 }
 
 static CK_RV
-proto_write_byte_array(CallState * cs, CK_BYTE_PTR array, CK_ULONG_PTR len,
-		       CK_RV ret)
+proto_write_byte_array(CallState *cs, CK_BYTE_PTR array, CK_ULONG_PTR len, CK_RV ret)
 {
 	assert(cs);
 
@@ -336,8 +336,7 @@ proto_write_byte_array(CallState * cs, CK_BYTE_PTR array, CK_ULONG_PTR len,
 }
 
 static CK_RV
-proto_read_ulong_buffer(CallState * cs, CK_ULONG_PTR * buffer,
-			CK_ULONG * n_buffer)
+proto_read_ulong_buffer(CallState *cs, CK_ULONG_PTR *buffer, CK_ULONG *n_buffer)
 {
 	GckRpcMessage *msg;
 	uint32_t length;
@@ -352,8 +351,7 @@ proto_read_ulong_buffer(CallState * cs, CK_ULONG_PTR * buffer,
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "fu"));
 
 	/* The number of ulongs there's room for on the other end */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &length))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &length))
 		return PARSE_ERROR;
 
 	*n_buffer = length;
@@ -371,8 +369,7 @@ proto_read_ulong_buffer(CallState * cs, CK_ULONG_PTR * buffer,
 }
 
 static CK_RV
-proto_write_ulong_array(CallState * cs, CK_ULONG_PTR array, CK_ULONG len,
-			CK_RV ret)
+proto_write_ulong_array(CallState *cs, CK_ULONG_PTR array, CK_ULONG len, CK_RV ret)
 {
 	assert(cs);
 
@@ -400,8 +397,7 @@ proto_write_ulong_array(CallState * cs, CK_ULONG_PTR array, CK_ULONG len,
 }
 
 static CK_RV
-proto_read_attribute_buffer(CallState * cs, CK_ATTRIBUTE_PTR * result,
-			    CK_ULONG * n_result)
+proto_read_attribute_buffer(CallState *cs, CK_ATTRIBUTE_PTR *result, CK_ULONG *n_result)
 {
 	CK_ATTRIBUTE_PTR attrs;
 	GckRpcMessage *msg;
@@ -418,8 +414,7 @@ proto_read_attribute_buffer(CallState * cs, CK_ATTRIBUTE_PTR * result,
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "fA"));
 
 	/* Read the number of attributes */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &n_attrs))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &n_attrs))
 		return PARSE_ERROR;
 
 	/* Allocate memory for the attribute structures */
@@ -431,15 +426,13 @@ proto_read_attribute_buffer(CallState * cs, CK_ATTRIBUTE_PTR * result,
 	for (i = 0; i < n_attrs; ++i) {
 
 		/* The attribute type */
-		if (!egg_buffer_get_uint32
-		    (&msg->buffer, msg->parsed, &msg->parsed, &value))
+		if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &value))
 			return PARSE_ERROR;
 
 		attrs[i].type = value;
 
 		/* The number of bytes to allocate */
-		if (!egg_buffer_get_uint32
-		    (&msg->buffer, msg->parsed, &msg->parsed, &value))
+		if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &value))
 			return PARSE_ERROR;
 
 		if (value == 0) {
@@ -459,8 +452,7 @@ proto_read_attribute_buffer(CallState * cs, CK_ATTRIBUTE_PTR * result,
 }
 
 static CK_RV
-proto_read_attribute_array(CallState * cs, CK_ATTRIBUTE_PTR * result,
-			   CK_ULONG * n_result)
+proto_read_attribute_array(CallState *cs, CK_ATTRIBUTE_PTR *result, CK_ULONG *n_result)
 {
 	CK_ATTRIBUTE_PTR attrs;
 	const unsigned char *data;
@@ -480,11 +472,10 @@ proto_read_attribute_array(CallState * cs, CK_ATTRIBUTE_PTR * result,
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "aA"));
 
 	/* Read the number of attributes */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &n_attrs))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &n_attrs))
 		return PARSE_ERROR;
 
-	if (! n_attrs) {
+	if (!n_attrs) {
 		/* If there are no attributes, it makes most sense to make result
 		 * a NULL pointer. What use could one have of a potentially dangling
 		 * pointer anyways?
@@ -503,43 +494,37 @@ proto_read_attribute_array(CallState * cs, CK_ATTRIBUTE_PTR * result,
 	for (i = 0; i < n_attrs; ++i) {
 
 		/* The attribute type */
-		if (!egg_buffer_get_uint32
-		    (&msg->buffer, msg->parsed, &msg->parsed, &value))
+		if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &value))
 			return PARSE_ERROR;
 
 		attrs[i].type = value;
 
 		/* Whether this one is valid or not */
-		if (!egg_buffer_get_byte
-		    (&msg->buffer, msg->parsed, &msg->parsed, &valid))
+		if (!egg_buffer_get_byte(&msg->buffer, msg->parsed, &msg->parsed, &valid))
 			return PARSE_ERROR;
 
 		if (valid) {
-			if (!egg_buffer_get_uint32
-			    (&msg->buffer, msg->parsed, &msg->parsed, &value))
+			if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &value))
 				return PARSE_ERROR;
-			if (!egg_buffer_get_byte_array
-			    (&msg->buffer, msg->parsed, &msg->parsed, &data,
-			     &n_data))
+			if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed,
+			                               &data, &n_data))
 				return PARSE_ERROR;
 
 			if (data != NULL && n_data != value) {
-				gck_rpc_warn
-				    ("attribute length and data do not match");
+				gck_rpc_warn("attribute length and data do not match");
 				return PARSE_ERROR;
 			}
 
 			CK_ULONG a;
 
-			if (value == sizeof (uint64_t) &&
-			    value != sizeof (CK_ULONG) &&
-			    gck_rpc_has_ulong_parameter(attrs[i].type)) {
+			if (value == sizeof(uint64_t) && value != sizeof(CK_ULONG)
+			    && gck_rpc_has_ulong_parameter(attrs[i].type)) {
 
-				value = sizeof (CK_ULONG);
+				value = sizeof(CK_ULONG);
 				a = *(uint64_t *)data;
 				*(CK_ULONG *)data = a;
 			}
-			attrs[i].pValue = (CK_VOID_PTR) data;
+			attrs[i].pValue = (CK_VOID_PTR)data;
 			attrs[i].ulValueLen = value;
 		} else {
 			attrs[i].pValue = NULL;
@@ -553,8 +538,7 @@ proto_read_attribute_array(CallState * cs, CK_ATTRIBUTE_PTR * result,
 }
 
 static CK_RV
-proto_write_attribute_array(CallState * cs, CK_ATTRIBUTE_PTR array,
-			    CK_ULONG len, CK_RV ret)
+proto_write_attribute_array(CallState *cs, CK_ATTRIBUTE_PTR array, CK_ULONG len, CK_RV ret)
 {
 	assert(cs);
 
@@ -576,14 +560,15 @@ proto_write_attribute_array(CallState * cs, CK_ATTRIBUTE_PTR array,
 		return ret;
 	};
 
-	if (!gck_rpc_message_write_attribute_array(cs->resp, array, len) ||
-	    !gck_rpc_message_write_ulong(cs->resp, ret))
+	if (!gck_rpc_message_write_attribute_array(cs->resp, array, len)
+	    || !gck_rpc_message_write_ulong(cs->resp, ret))
 		return PREP_ERROR;
 
 	return CKR_OK;
 }
 
-static CK_RV proto_read_space_string(CallState * cs, CK_UTF8CHAR_PTR * val, CK_ULONG length)
+static CK_RV
+proto_read_space_string(CallState *cs, CK_UTF8CHAR_PTR *val, CK_ULONG length)
 {
 	GckRpcMessage *msg;
 	const unsigned char *data;
@@ -599,8 +584,7 @@ static CK_RV proto_read_space_string(CallState * cs, CK_UTF8CHAR_PTR * val, CK_U
 	/* Check that we're supposed to have this at this point */
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "s"));
 
-	if (!egg_buffer_get_byte_array
-	    (&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
+	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
 		return PARSE_ERROR;
 
 	/* Allocate a block of memory for it. */
@@ -613,7 +597,8 @@ static CK_RV proto_read_space_string(CallState * cs, CK_UTF8CHAR_PTR * val, CK_U
 	return CKR_OK;
 }
 
-static CK_RV proto_read_mechanism(CallState * cs, CK_MECHANISM_PTR mech)
+static CK_RV
+proto_read_mechanism(CallState *cs, CK_MECHANISM_PTR mech)
 {
 	GckRpcMessage *msg;
 	const unsigned char *data;
@@ -629,22 +614,21 @@ static CK_RV proto_read_mechanism(CallState * cs, CK_MECHANISM_PTR mech)
 	assert(!msg->signature || gck_rpc_message_verify_part(msg, "M"));
 
 	/* The mechanism type */
-	if (!egg_buffer_get_uint32
-	    (&msg->buffer, msg->parsed, &msg->parsed, &value))
+	if (!egg_buffer_get_uint32(&msg->buffer, msg->parsed, &msg->parsed, &value))
 		return PARSE_ERROR;
 
 	/* The mechanism data */
-	if (!egg_buffer_get_byte_array
-	    (&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
+	if (!egg_buffer_get_byte_array(&msg->buffer, msg->parsed, &msg->parsed, &data, &n_data))
 		return PARSE_ERROR;
 
 	mech->mechanism = value;
-	mech->pParameter = (CK_VOID_PTR) data;
+	mech->pParameter = (CK_VOID_PTR)data;
 	mech->ulParameterLen = n_data;
 	return CKR_OK;
 }
 
-static CK_RV proto_write_info(CallState * cs, CK_INFO_PTR info)
+static CK_RV
+proto_write_info(CallState *cs, CK_INFO_PTR info)
 {
 	GckRpcMessage *msg;
 
@@ -653,18 +637,18 @@ static CK_RV proto_write_info(CallState * cs, CK_INFO_PTR info)
 
 	msg = cs->resp;
 
-	if (!gck_rpc_message_write_version(msg, &info->cryptokiVersion) ||
-	    !gck_rpc_message_write_space_string(msg, info->manufacturerID, 32)
+	if (!gck_rpc_message_write_version(msg, &info->cryptokiVersion)
+	    || !gck_rpc_message_write_space_string(msg, info->manufacturerID, 32)
 	    || !gck_rpc_message_write_ulong(msg, info->flags)
-	    || !gck_rpc_message_write_space_string(msg,
-						   info->libraryDescription, 32)
+	    || !gck_rpc_message_write_space_string(msg, info->libraryDescription, 32)
 	    || !gck_rpc_message_write_version(msg, &info->libraryVersion))
 		return PREP_ERROR;
 
 	return CKR_OK;
 }
 
-static CK_RV proto_write_slot_info(CallState * cs, CK_SLOT_INFO_PTR info)
+static CK_RV
+proto_write_slot_info(CallState *cs, CK_SLOT_INFO_PTR info)
 {
 	GckRpcMessage *msg;
 
@@ -674,8 +658,7 @@ static CK_RV proto_write_slot_info(CallState * cs, CK_SLOT_INFO_PTR info)
 	msg = cs->resp;
 
 	if (!gck_rpc_message_write_space_string(msg, info->slotDescription, 64)
-	    || !gck_rpc_message_write_space_string(msg, info->manufacturerID,
-						   32)
+	    || !gck_rpc_message_write_space_string(msg, info->manufacturerID, 32)
 	    || !gck_rpc_message_write_ulong(msg, info->flags)
 	    || !gck_rpc_message_write_version(msg, &info->hardwareVersion)
 	    || !gck_rpc_message_write_version(msg, &info->firmwareVersion))
@@ -684,7 +667,8 @@ static CK_RV proto_write_slot_info(CallState * cs, CK_SLOT_INFO_PTR info)
 	return CKR_OK;
 }
 
-static CK_RV proto_write_token_info(CallState * cs, CK_TOKEN_INFO_PTR info)
+static CK_RV
+proto_write_token_info(CallState *cs, CK_TOKEN_INFO_PTR info)
 {
 	GckRpcMessage *msg;
 
@@ -693,8 +677,8 @@ static CK_RV proto_write_token_info(CallState * cs, CK_TOKEN_INFO_PTR info)
 
 	msg = cs->resp;
 
-	if (!gck_rpc_message_write_space_string(msg, info->label, 32) ||
-	    !gck_rpc_message_write_space_string(msg, info->manufacturerID, 32)
+	if (!gck_rpc_message_write_space_string(msg, info->label, 32)
+	    || !gck_rpc_message_write_space_string(msg, info->manufacturerID, 32)
 	    || !gck_rpc_message_write_space_string(msg, info->model, 16)
 	    || !gck_rpc_message_write_space_string(msg, info->serialNumber, 16)
 	    || !gck_rpc_message_write_ulong(msg, info->flags)
@@ -717,7 +701,7 @@ static CK_RV proto_write_token_info(CallState * cs, CK_TOKEN_INFO_PTR info)
 }
 
 static CK_RV
-proto_write_mechanism_info(CallState * cs, CK_MECHANISM_INFO_PTR info)
+proto_write_mechanism_info(CallState *cs, CK_MECHANISM_INFO_PTR info)
 {
 	GckRpcMessage *msg;
 
@@ -726,15 +710,16 @@ proto_write_mechanism_info(CallState * cs, CK_MECHANISM_INFO_PTR info)
 
 	msg = cs->resp;
 
-	if (!gck_rpc_message_write_ulong(msg, info->ulMinKeySize) ||
-	    !gck_rpc_message_write_ulong(msg, info->ulMaxKeySize) ||
-	    !gck_rpc_message_write_ulong(msg, info->flags))
+	if (!gck_rpc_message_write_ulong(msg, info->ulMinKeySize)
+	    || !gck_rpc_message_write_ulong(msg, info->ulMaxKeySize)
+	    || !gck_rpc_message_write_ulong(msg, info->flags))
 		return PREP_ERROR;
 
 	return CKR_OK;
 }
 
-static CK_RV proto_write_session_info(CallState * cs, CK_SESSION_INFO_PTR info)
+static CK_RV
+proto_write_session_info(CallState *cs, CK_SESSION_INFO_PTR info)
 {
 	GckRpcMessage *msg;
 
@@ -743,10 +728,10 @@ static CK_RV proto_write_session_info(CallState * cs, CK_SESSION_INFO_PTR info)
 
 	msg = cs->resp;
 
-	if (!gck_rpc_message_write_ulong(msg, info->slotID) ||
-	    !gck_rpc_message_write_ulong(msg, info->state) ||
-	    !gck_rpc_message_write_ulong(msg, info->flags) ||
-	    !gck_rpc_message_write_ulong(msg, info->ulDeviceError))
+	if (!gck_rpc_message_write_ulong(msg, info->slotID)
+	    || !gck_rpc_message_write_ulong(msg, info->state)
+	    || !gck_rpc_message_write_ulong(msg, info->flags)
+	    || !gck_rpc_message_write_ulong(msg, info->ulDeviceError))
 		return PREP_ERROR;
 
 	return CKR_OK;
@@ -757,107 +742,122 @@ static CK_RV proto_write_session_info(CallState * cs, CK_SESSION_INFO_PTR info)
  */
 
 #define DECLARE_CK_ULONG_PTR(ck_ulong_ptr_name) \
-	CK_ULONG ck_ulong_ptr_name ## _v ; \
-	CK_ULONG_PTR ck_ulong_ptr_name ; \
-	ck_ulong_ptr_name ## _v = 0; \
-	ck_ulong_ptr_name = &ck_ulong_ptr_name ## _v ;
+	CK_ULONG ck_ulong_ptr_name##_v;         \
+	CK_ULONG_PTR ck_ulong_ptr_name;         \
+	ck_ulong_ptr_name##_v = 0;              \
+	ck_ulong_ptr_name = &ck_ulong_ptr_name##_v;
 
-#define BEGIN_CALL(call_id) \
-	debug ((#call_id ": enter")); \
-	assert (cs); \
-	assert (pkcs11_module); \
-	{  \
-		CK_ ## call_id _func = pkcs11_module-> call_id; \
-		CK_RV _ret = CKR_OK; \
-		if (!_func) { _ret = CKR_GENERAL_ERROR; goto _cleanup; }
+#define BEGIN_CALL(call_id)                                  \
+	debug((#call_id ": enter"));                         \
+	assert(cs);                                          \
+	assert(pkcs11_module);                               \
+	{                                                    \
+		CK_##call_id _func = pkcs11_module->call_id; \
+		CK_RV _ret = CKR_OK;                         \
+		if (!_func) {                                \
+			_ret = CKR_GENERAL_ERROR;            \
+			goto _cleanup;                       \
+		}
 
-#define PROCESS_CALL(args)\
-	assert (gck_rpc_message_is_verified (cs->req)); \
+#define PROCESS_CALL(args)                            \
+	assert(gck_rpc_message_is_verified(cs->req)); \
 	_ret = _func args
 
-#define END_CALL \
-	_cleanup: \
-		debug (("ret: 0x%x", _ret)); \
-		return _ret; \
+#define END_CALL                    \
+	_cleanup:                   \
+	debug(("ret: 0x%x", _ret)); \
+	return _ret;                \
 	}
 
-#define IN_BYTE(val) \
-	if (!gck_rpc_message_read_byte (cs->req, &val)) \
-		{ _ret = PARSE_ERROR; goto _cleanup; }
+#define IN_BYTE(val)                                     \
+	if (!gck_rpc_message_read_byte(cs->req, &val)) { \
+		_ret = PARSE_ERROR;                      \
+		goto _cleanup;                           \
+	}
 
-#define IN_ULONG(val) \
-	if (!gck_rpc_message_read_ulong (cs->req, &val)) \
-		{ _ret = PARSE_ERROR; goto _cleanup; }
+#define IN_ULONG(val)                                     \
+	if (!gck_rpc_message_read_ulong(cs->req, &val)) { \
+		_ret = PARSE_ERROR;                       \
+		goto _cleanup;                            \
+	}
 
-#define IN_SPACE_STRING(val, len)			   \
-	_ret = proto_read_space_string (cs, &val, len);	   \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_SPACE_STRING(val, len)                      \
+	_ret = proto_read_space_string(cs, &val, len); \
+	if (_ret != CKR_OK)                            \
+		goto _cleanup;
 
-#define IN_BYTE_BUFFER(buffer, buffer_len_ptr) \
-	_ret = proto_read_byte_buffer (cs, &buffer, &buffer_len_ptr); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_BYTE_BUFFER(buffer, buffer_len_ptr)                       \
+	_ret = proto_read_byte_buffer(cs, &buffer, &buffer_len_ptr); \
+	if (_ret != CKR_OK)                                          \
+		goto _cleanup;
 
-#define IN_BYTE_ARRAY(buffer, buffer_len) \
-	_ret = proto_read_byte_array (cs, &buffer, &buffer_len); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_BYTE_ARRAY(buffer, buffer_len)                       \
+	_ret = proto_read_byte_array(cs, &buffer, &buffer_len); \
+	if (_ret != CKR_OK)                                     \
+		goto _cleanup;
 
-#define IN_ULONG_BUFFER(buffer, buffer_len) \
-	_ret = proto_read_ulong_buffer (cs, &buffer, &buffer_len); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_ULONG_BUFFER(buffer, buffer_len)                       \
+	_ret = proto_read_ulong_buffer(cs, &buffer, &buffer_len); \
+	if (_ret != CKR_OK)                                       \
+		goto _cleanup;
 
-#define IN_ATTRIBUTE_BUFFER(buffer, buffer_len) \
-	_ret = proto_read_attribute_buffer (cs, &buffer, &buffer_len); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_ATTRIBUTE_BUFFER(buffer, buffer_len)                       \
+	_ret = proto_read_attribute_buffer(cs, &buffer, &buffer_len); \
+	if (_ret != CKR_OK)                                           \
+		goto _cleanup;
 
-#define IN_ATTRIBUTE_ARRAY(attrs, n_attrs) \
-	_ret = proto_read_attribute_array (cs, &attrs, &n_attrs); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_ATTRIBUTE_ARRAY(attrs, n_attrs)                       \
+	_ret = proto_read_attribute_array(cs, &attrs, &n_attrs); \
+	if (_ret != CKR_OK)                                      \
+		goto _cleanup;
 
-#define IN_MECHANISM(mech) \
-	_ret = proto_read_mechanism (cs, &mech); \
-	if (_ret != CKR_OK) goto _cleanup;
+#define IN_MECHANISM(mech)                      \
+	_ret = proto_read_mechanism(cs, &mech); \
+	if (_ret != CKR_OK)                     \
+		goto _cleanup;
 
-#define OUT_ULONG(val) \
-	if (_ret == CKR_OK && !gck_rpc_message_write_ulong (cs->resp, val)) \
+#define OUT_ULONG(val)                                                     \
+	if (_ret == CKR_OK && !gck_rpc_message_write_ulong(cs->resp, val)) \
 		_ret = PREP_ERROR;
 
-#define OUT_BYTE_ARRAY(array, len_ptr) \
+#define OUT_BYTE_ARRAY(array, len_ptr)        \
 	/* Note how we filter return codes */ \
-	_ret = proto_write_byte_array (cs, array, len_ptr, _ret);
+	_ret = proto_write_byte_array(cs, array, len_ptr, _ret);
 
-#define OUT_ULONG_ARRAY(array, len) \
+#define OUT_ULONG_ARRAY(array, len)           \
 	/* Note how we filter return codes */ \
-	_ret = proto_write_ulong_array (cs, array, len, _ret);
+	_ret = proto_write_ulong_array(cs, array, len, _ret);
 
-#define OUT_ATTRIBUTE_ARRAY(array, len) \
+#define OUT_ATTRIBUTE_ARRAY(array, len)       \
 	/* Note how we filter return codes */ \
-	_ret = proto_write_attribute_array (cs, array, len, _ret);
+	_ret = proto_write_attribute_array(cs, array, len, _ret);
 
-#define OUT_INFO(val) \
+#define OUT_INFO(val)       \
 	if (_ret == CKR_OK) \
-		_ret = proto_write_info (cs, &val);
+		_ret = proto_write_info(cs, &val);
 
-#define OUT_SLOT_INFO(val) \
+#define OUT_SLOT_INFO(val)  \
 	if (_ret == CKR_OK) \
-		_ret = proto_write_slot_info (cs, &val);
+		_ret = proto_write_slot_info(cs, &val);
 
 #define OUT_TOKEN_INFO(val) \
 	if (_ret == CKR_OK) \
-		_ret = proto_write_token_info (cs, &val);
+		_ret = proto_write_token_info(cs, &val);
 
 #define OUT_MECHANISM_INFO(val) \
-	if (_ret == CKR_OK) \
-		_ret = proto_write_mechanism_info (cs, &val);
+	if (_ret == CKR_OK)     \
+		_ret = proto_write_mechanism_info(cs, &val);
 
 #define OUT_SESSION_INFO(val) \
-	if (_ret == CKR_OK) \
-		_ret = proto_write_session_info (cs, &val);
+	if (_ret == CKR_OK)   \
+		_ret = proto_write_session_info(cs, &val);
 
 /* ---------------------------------------------------------------------------
  * DISPATCH SPECIFIC CALLS
  */
 
-static CK_RV rpc_C_Initialize(CallState * cs)
+static CK_RV
+rpc_C_Initialize(CallState *cs)
 {
 	CK_BYTE_PTR handshake;
 	CK_ULONG n_handshake;
@@ -872,11 +872,9 @@ static CK_RV rpc_C_Initialize(CallState * cs)
 	if (ret == CKR_OK) {
 
 		/* Check to make sure the header matches */
-		if (n_handshake != GCK_RPC_HANDSHAKE_LEN ||
-		    handshake == NULL_PTR ||
-		    memcmp(handshake, GCK_RPC_HANDSHAKE, n_handshake) != 0) {
-			gck_rpc_warn
-			    ("invalid handshake received from connecting module");
+		if (n_handshake != GCK_RPC_HANDSHAKE_LEN || handshake == NULL_PTR
+		    || memcmp(handshake, GCK_RPC_HANDSHAKE, n_handshake) != 0) {
+			gck_rpc_warn("invalid handshake received from connecting module");
 			ret = CKR_GENERAL_ERROR;
 		}
 
@@ -892,12 +890,12 @@ static CK_RV rpc_C_Initialize(CallState * cs)
 	return ret;
 }
 
-static CK_RV rpc_C_Finalize(CallState * cs)
+static CK_RV
+rpc_C_Finalize(CallState *cs)
 {
 	CK_ULONG i;
 	CK_RV ret;
 	DispatchState *ds, *next;
-
 
 	debug(("C_Finalize: enter"));
 
@@ -917,7 +915,7 @@ static CK_RV rpc_C_Finalize(CallState * cs)
 		if (cs->sessions[i].id) {
 			debug(("Closing session %li on position %i", cs->sessions[i].id, i));
 
-			ret = (pkcs11_module->C_CloseSession) (cs->sessions[i].id);
+			ret = (pkcs11_module->C_CloseSession)(cs->sessions[i].id);
 			if (ret != CKR_OK)
 				break;
 			cs->sessions[i].id = 0;
@@ -929,16 +927,14 @@ static CK_RV rpc_C_Finalize(CallState * cs)
 	for (ds = pkcs11_dispatchers; ds; ds = next) {
 		CallState *c = &ds->cs;
 
-                next = ds->next;
+		next = ds->next;
 
 		if (c->appid != cs->appid)
-			continue ;
+			continue;
 		if (c->sock == cs->sock)
-			continue ;
-		if (c->req &&
-		    (c->req->call_id == GCK_RPC_CALL_C_WaitForSlotEvent)) {
-			debug(("Sending interruption signal to %i",
-                                    c->sock));
+			continue;
+		if (c->req && (c->req->call_id == GCK_RPC_CALL_C_WaitForSlotEvent)) {
+			debug(("Sending interruption signal to %i", c->sock));
 			if (c->sock != -1)
 				if (shutdown(c->sock, SHUT_RDWR) == 0)
 					c->sock = -1;
@@ -951,7 +947,8 @@ static CK_RV rpc_C_Finalize(CallState * cs)
 	return ret;
 }
 
-static CK_RV rpc_C_GetInfo(CallState * cs)
+static CK_RV
+rpc_C_GetInfo(CallState *cs)
 {
 	CK_INFO info;
 
@@ -961,7 +958,8 @@ static CK_RV rpc_C_GetInfo(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetSlotList(CallState * cs)
+static CK_RV
+rpc_C_GetSlotList(CallState *cs)
 {
 	CK_BBOOL token_present;
 	CK_SLOT_ID_PTR slot_list;
@@ -975,7 +973,8 @@ static CK_RV rpc_C_GetSlotList(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetSlotInfo(CallState * cs)
+static CK_RV
+rpc_C_GetSlotInfo(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_SLOT_INFO info;
@@ -989,7 +988,8 @@ static CK_RV rpc_C_GetSlotInfo(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetTokenInfo(CallState * cs)
+static CK_RV
+rpc_C_GetTokenInfo(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_TOKEN_INFO info;
@@ -1003,7 +1003,8 @@ static CK_RV rpc_C_GetTokenInfo(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetMechanismList(CallState * cs)
+static CK_RV
+rpc_C_GetMechanismList(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_MECHANISM_TYPE_PTR mechanism_list;
@@ -1019,7 +1020,8 @@ static CK_RV rpc_C_GetMechanismList(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetMechanismInfo(CallState * cs)
+static CK_RV
+rpc_C_GetMechanismInfo(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_MECHANISM_TYPE type;
@@ -1035,7 +1037,8 @@ static CK_RV rpc_C_GetMechanismInfo(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_InitToken(CallState * cs)
+static CK_RV
+rpc_C_InitToken(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_UTF8CHAR_PTR pin;
@@ -1052,7 +1055,8 @@ static CK_RV rpc_C_InitToken(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_WaitForSlotEvent(CallState * cs)
+static CK_RV
+rpc_C_WaitForSlotEvent(CallState *cs)
 {
 	CK_FLAGS flags;
 	CK_SLOT_ID slot_id;
@@ -1067,7 +1071,8 @@ static CK_RV rpc_C_WaitForSlotEvent(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_OpenSession(CallState * cs)
+static CK_RV
+rpc_C_OpenSession(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_FLAGS flags;
@@ -1083,7 +1088,7 @@ static CK_RV rpc_C_OpenSession(CallState * cs)
 		int i;
 		/* Remember this thread opened this session. Needed for C_CloseAllSessions. */
 		for (i = 0; i < PKCS11PROXY_MAX_SESSION_COUNT; i++) {
-			if (! cs->sessions[i].id) {
+			if (!cs->sessions[i].id) {
 				cs->sessions[i].id = session;
 				cs->sessions[i].slot = slot_id;
 				debug(("Session %li stored in position %i", session, i));
@@ -1091,14 +1096,16 @@ static CK_RV rpc_C_OpenSession(CallState * cs)
 			}
 		}
 		if (i == PKCS11PROXY_MAX_SESSION_COUNT) {
-			_ret = CKR_SESSION_COUNT; goto _cleanup;
+			_ret = CKR_SESSION_COUNT;
+			goto _cleanup;
 		}
 	}
 	OUT_ULONG(session);
 	END_CALL;
 }
 
-static CK_RV rpc_C_CloseSession(CallState * cs)
+static CK_RV
+rpc_C_CloseSession(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 
@@ -1123,7 +1130,8 @@ static CK_RV rpc_C_CloseSession(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_CloseAllSessions(CallState * cs)
+static CK_RV
+rpc_C_CloseAllSessions(CallState *cs)
 {
 	CK_SLOT_ID slot_id;
 	CK_SLOT_INFO slotInfo;
@@ -1148,12 +1156,12 @@ static CK_RV rpc_C_CloseAllSessions(CallState * cs)
 
 	for (i = 0; i < PKCS11PROXY_MAX_SESSION_COUNT; i++) {
 		if (cs->sessions[i].id && (cs->sessions[i].slot == slot_id)) {
-			debug(("Closing session %li on position %i with slot %i", cs->sessions[i].id, i, slot_id));
+			debug(("Closing session %li on position %i with slot %i",
+			       cs->sessions[i].id, i, slot_id));
 
-			_ret = (pkcs11_module->C_CloseSession) (cs->sessions[i].id);
-			if (_ret == CKR_OK ||
-			    _ret == CKR_SESSION_CLOSED ||
-			    _ret == CKR_SESSION_HANDLE_INVALID) {
+			_ret = (pkcs11_module->C_CloseSession)(cs->sessions[i].id);
+			if (_ret == CKR_OK || _ret == CKR_SESSION_CLOSED
+			    || _ret == CKR_SESSION_HANDLE_INVALID) {
 				cs->sessions[i].id = 0;
 			}
 			if (_ret != CKR_OK)
@@ -1163,7 +1171,8 @@ static CK_RV rpc_C_CloseAllSessions(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetFunctionStatus(CallState * cs)
+static CK_RV
+rpc_C_GetFunctionStatus(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 
@@ -1173,7 +1182,8 @@ static CK_RV rpc_C_GetFunctionStatus(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_CancelFunction(CallState * cs)
+static CK_RV
+rpc_C_CancelFunction(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 
@@ -1183,7 +1193,8 @@ static CK_RV rpc_C_CancelFunction(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetSessionInfo(CallState * cs)
+static CK_RV
+rpc_C_GetSessionInfo(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_SESSION_INFO info;
@@ -1198,7 +1209,8 @@ static CK_RV rpc_C_GetSessionInfo(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_InitPIN(CallState * cs)
+static CK_RV
+rpc_C_InitPIN(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_UTF8CHAR_PTR pin;
@@ -1211,7 +1223,8 @@ static CK_RV rpc_C_InitPIN(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SetPIN(CallState * cs)
+static CK_RV
+rpc_C_SetPIN(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_UTF8CHAR_PTR old_pin;
@@ -1227,7 +1240,8 @@ static CK_RV rpc_C_SetPIN(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetOperationState(CallState * cs)
+static CK_RV
+rpc_C_GetOperationState(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR operation_state;
@@ -1241,7 +1255,8 @@ static CK_RV rpc_C_GetOperationState(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SetOperationState(CallState * cs)
+static CK_RV
+rpc_C_SetOperationState(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR operation_state;
@@ -1254,12 +1269,13 @@ static CK_RV rpc_C_SetOperationState(CallState * cs)
 	IN_BYTE_ARRAY(operation_state, operation_state_len);
 	IN_ULONG(encryption_key);
 	IN_ULONG(authentication_key);
-	PROCESS_CALL((session, operation_state, operation_state_len,
-		      encryption_key, authentication_key));
+	PROCESS_CALL(
+	    (session, operation_state, operation_state_len, encryption_key, authentication_key));
 	END_CALL;
 }
 
-static CK_RV rpc_C_Login(CallState * cs)
+static CK_RV
+rpc_C_Login(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_USER_TYPE user_type;
@@ -1274,7 +1290,8 @@ static CK_RV rpc_C_Login(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_Logout(CallState * cs)
+static CK_RV
+rpc_C_Logout(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 
@@ -1288,7 +1305,8 @@ static CK_RV rpc_C_Logout(CallState * cs)
  * OBJECT OPERATIONS
  */
 
-static CK_RV rpc_C_CreateObject(CallState * cs)
+static CK_RV
+rpc_C_CreateObject(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_ATTRIBUTE_PTR template;
@@ -1303,7 +1321,8 @@ static CK_RV rpc_C_CreateObject(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_CopyObject(CallState * cs)
+static CK_RV
+rpc_C_CopyObject(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE object;
@@ -1320,7 +1339,8 @@ static CK_RV rpc_C_CopyObject(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DestroyObject(CallState * cs)
+static CK_RV
+rpc_C_DestroyObject(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE object;
@@ -1332,7 +1352,8 @@ static CK_RV rpc_C_DestroyObject(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetObjectSize(CallState * cs)
+static CK_RV
+rpc_C_GetObjectSize(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE object;
@@ -1346,7 +1367,8 @@ static CK_RV rpc_C_GetObjectSize(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GetAttributeValue(CallState * cs)
+static CK_RV
+rpc_C_GetAttributeValue(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE object;
@@ -1362,7 +1384,8 @@ static CK_RV rpc_C_GetAttributeValue(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SetAttributeValue(CallState * cs)
+static CK_RV
+rpc_C_SetAttributeValue(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE object;
@@ -1377,7 +1400,8 @@ static CK_RV rpc_C_SetAttributeValue(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_FindObjectsInit(CallState * cs)
+static CK_RV
+rpc_C_FindObjectsInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_ATTRIBUTE_PTR template;
@@ -1390,7 +1414,8 @@ static CK_RV rpc_C_FindObjectsInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_FindObjects(CallState * cs)
+static CK_RV
+rpc_C_FindObjects(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE_PTR objects;
@@ -1405,7 +1430,8 @@ static CK_RV rpc_C_FindObjects(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_FindObjectsFinal(CallState * cs)
+static CK_RV
+rpc_C_FindObjectsFinal(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 
@@ -1415,7 +1441,8 @@ static CK_RV rpc_C_FindObjectsFinal(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_EncryptInit(CallState * cs)
+static CK_RV
+rpc_C_EncryptInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1427,10 +1454,10 @@ static CK_RV rpc_C_EncryptInit(CallState * cs)
 	IN_ULONG(key);
 	PROCESS_CALL((session, &mechanism, key));
 	END_CALL;
-
 }
 
-static CK_RV rpc_C_Encrypt(CallState * cs)
+static CK_RV
+rpc_C_Encrypt(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR data;
@@ -1442,13 +1469,13 @@ static CK_RV rpc_C_Encrypt(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(data, data_len);
 	IN_BYTE_BUFFER(encrypted_data, encrypted_data_len);
-	PROCESS_CALL((session, data, data_len, encrypted_data,
-		      encrypted_data_len));
+	PROCESS_CALL((session, data, data_len, encrypted_data, encrypted_data_len));
 	OUT_BYTE_ARRAY(encrypted_data, encrypted_data_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_EncryptUpdate(CallState * cs)
+static CK_RV
+rpc_C_EncryptUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1460,13 +1487,13 @@ static CK_RV rpc_C_EncryptUpdate(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(part, part_len);
 	IN_BYTE_BUFFER(encrypted_part, encrypted_part_len);
-	PROCESS_CALL((session, part, part_len, encrypted_part,
-		      encrypted_part_len));
+	PROCESS_CALL((session, part, part_len, encrypted_part, encrypted_part_len));
 	OUT_BYTE_ARRAY(encrypted_part, encrypted_part_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_EncryptFinal(CallState * cs)
+static CK_RV
+rpc_C_EncryptFinal(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR last_encrypted_part;
@@ -1480,7 +1507,8 @@ static CK_RV rpc_C_EncryptFinal(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DecryptInit(CallState * cs)
+static CK_RV
+rpc_C_DecryptInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1494,7 +1522,8 @@ static CK_RV rpc_C_DecryptInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_Decrypt(CallState * cs)
+static CK_RV
+rpc_C_Decrypt(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR encrypted_data;
@@ -1506,13 +1535,13 @@ static CK_RV rpc_C_Decrypt(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(encrypted_data, encrypted_data_len);
 	IN_BYTE_BUFFER(data, data_len);
-	PROCESS_CALL((session, encrypted_data, encrypted_data_len, data,
-		      data_len));
+	PROCESS_CALL((session, encrypted_data, encrypted_data_len, data, data_len));
 	OUT_BYTE_ARRAY(data, data_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_DecryptUpdate(CallState * cs)
+static CK_RV
+rpc_C_DecryptUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR encrypted_part;
@@ -1524,13 +1553,13 @@ static CK_RV rpc_C_DecryptUpdate(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(encrypted_part, encrypted_part_len);
 	IN_BYTE_BUFFER(part, part_len);
-	PROCESS_CALL((session, encrypted_part, encrypted_part_len, part,
-		      part_len));
+	PROCESS_CALL((session, encrypted_part, encrypted_part_len, part, part_len));
 	OUT_BYTE_ARRAY(part, part_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_DecryptFinal(CallState * cs)
+static CK_RV
+rpc_C_DecryptFinal(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR last_part;
@@ -1544,7 +1573,8 @@ static CK_RV rpc_C_DecryptFinal(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DigestInit(CallState * cs)
+static CK_RV
+rpc_C_DigestInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1556,7 +1586,8 @@ static CK_RV rpc_C_DigestInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_Digest(CallState * cs)
+static CK_RV
+rpc_C_Digest(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR data;
@@ -1573,7 +1604,8 @@ static CK_RV rpc_C_Digest(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DigestUpdate(CallState * cs)
+static CK_RV
+rpc_C_DigestUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1586,7 +1618,8 @@ static CK_RV rpc_C_DigestUpdate(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DigestKey(CallState * cs)
+static CK_RV
+rpc_C_DigestKey(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_OBJECT_HANDLE key;
@@ -1598,7 +1631,8 @@ static CK_RV rpc_C_DigestKey(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DigestFinal(CallState * cs)
+static CK_RV
+rpc_C_DigestFinal(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR digest;
@@ -1612,7 +1646,8 @@ static CK_RV rpc_C_DigestFinal(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SignInit(CallState * cs)
+static CK_RV
+rpc_C_SignInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1626,7 +1661,8 @@ static CK_RV rpc_C_SignInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_Sign(CallState * cs)
+static CK_RV
+rpc_C_Sign(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1641,10 +1677,10 @@ static CK_RV rpc_C_Sign(CallState * cs)
 	PROCESS_CALL((session, part, part_len, signature, signature_len));
 	OUT_BYTE_ARRAY(signature, signature_len);
 	END_CALL;
-
 }
 
-static CK_RV rpc_C_SignUpdate(CallState * cs)
+static CK_RV
+rpc_C_SignUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1657,7 +1693,8 @@ static CK_RV rpc_C_SignUpdate(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SignFinal(CallState * cs)
+static CK_RV
+rpc_C_SignFinal(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR signature;
@@ -1671,7 +1708,8 @@ static CK_RV rpc_C_SignFinal(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SignRecoverInit(CallState * cs)
+static CK_RV
+rpc_C_SignRecoverInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1685,7 +1723,8 @@ static CK_RV rpc_C_SignRecoverInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_SignRecover(CallState * cs)
+static CK_RV
+rpc_C_SignRecover(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR data;
@@ -1702,7 +1741,8 @@ static CK_RV rpc_C_SignRecover(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_VerifyInit(CallState * cs)
+static CK_RV
+rpc_C_VerifyInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1716,7 +1756,8 @@ static CK_RV rpc_C_VerifyInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_Verify(CallState * cs)
+static CK_RV
+rpc_C_Verify(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR data;
@@ -1732,7 +1773,8 @@ static CK_RV rpc_C_Verify(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_VerifyUpdate(CallState * cs)
+static CK_RV
+rpc_C_VerifyUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1745,7 +1787,8 @@ static CK_RV rpc_C_VerifyUpdate(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_VerifyFinal(CallState * cs)
+static CK_RV
+rpc_C_VerifyFinal(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR signature;
@@ -1758,7 +1801,8 @@ static CK_RV rpc_C_VerifyFinal(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_VerifyRecoverInit(CallState * cs)
+static CK_RV
+rpc_C_VerifyRecoverInit(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1772,7 +1816,8 @@ static CK_RV rpc_C_VerifyRecoverInit(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_VerifyRecover(CallState * cs)
+static CK_RV
+rpc_C_VerifyRecover(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR signature;
@@ -1789,7 +1834,8 @@ static CK_RV rpc_C_VerifyRecover(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_DigestEncryptUpdate(CallState * cs)
+static CK_RV
+rpc_C_DigestEncryptUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1801,13 +1847,13 @@ static CK_RV rpc_C_DigestEncryptUpdate(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(part, part_len);
 	IN_BYTE_BUFFER(encrypted_part, encrypted_part_len);
-	PROCESS_CALL((session, part, part_len, encrypted_part,
-		      encrypted_part_len));
+	PROCESS_CALL((session, part, part_len, encrypted_part, encrypted_part_len));
 	OUT_BYTE_ARRAY(encrypted_part, encrypted_part_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_DecryptDigestUpdate(CallState * cs)
+static CK_RV
+rpc_C_DecryptDigestUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR encrypted_part;
@@ -1819,13 +1865,13 @@ static CK_RV rpc_C_DecryptDigestUpdate(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(encrypted_part, encrypted_part_len);
 	IN_BYTE_BUFFER(part, part_len);
-	PROCESS_CALL((session, encrypted_part, encrypted_part_len, part,
-		      part_len));
+	PROCESS_CALL((session, encrypted_part, encrypted_part_len, part, part_len));
 	OUT_BYTE_ARRAY(part, part_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_SignEncryptUpdate(CallState * cs)
+static CK_RV
+rpc_C_SignEncryptUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR part;
@@ -1837,13 +1883,13 @@ static CK_RV rpc_C_SignEncryptUpdate(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(part, part_len);
 	IN_BYTE_BUFFER(encrypted_part, encrypted_part_len);
-	PROCESS_CALL((session, part, part_len, encrypted_part,
-		      encrypted_part_len));
+	PROCESS_CALL((session, part, part_len, encrypted_part, encrypted_part_len));
 	OUT_BYTE_ARRAY(encrypted_part, encrypted_part_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_DecryptVerifyUpdate(CallState * cs)
+static CK_RV
+rpc_C_DecryptVerifyUpdate(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR encrypted_part;
@@ -1855,8 +1901,7 @@ static CK_RV rpc_C_DecryptVerifyUpdate(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_ARRAY(encrypted_part, encrypted_part_len);
 	IN_BYTE_BUFFER(part, part_len);
-	PROCESS_CALL((session, encrypted_part, encrypted_part_len, part,
-		      part_len));
+	PROCESS_CALL((session, encrypted_part, encrypted_part_len, part, part_len));
 	OUT_BYTE_ARRAY(part, part_len);
 	END_CALL;
 }
@@ -1865,7 +1910,8 @@ static CK_RV rpc_C_DecryptVerifyUpdate(CallState * cs)
  * KEY OPERATIONS
  */
 
-static CK_RV rpc_C_GenerateKey(CallState * cs)
+static CK_RV
+rpc_C_GenerateKey(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1882,7 +1928,8 @@ static CK_RV rpc_C_GenerateKey(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GenerateKeyPair(CallState * cs)
+static CK_RV
+rpc_C_GenerateKeyPair(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1898,16 +1945,16 @@ static CK_RV rpc_C_GenerateKeyPair(CallState * cs)
 	IN_MECHANISM(mechanism);
 	IN_ATTRIBUTE_ARRAY(public_key_template, public_key_attribute_count);
 	IN_ATTRIBUTE_ARRAY(private_key_template, private_key_attribute_count);
-	PROCESS_CALL((session, &mechanism, public_key_template,
-		      public_key_attribute_count, private_key_template,
-		      private_key_attribute_count, &public_key, &private_key));
+	PROCESS_CALL((session, &mechanism, public_key_template, public_key_attribute_count,
+	              private_key_template, private_key_attribute_count, &public_key,
+	              &private_key));
 	OUT_ULONG(public_key);
 	OUT_ULONG(private_key);
 	END_CALL;
-
 }
 
-static CK_RV rpc_C_WrapKey(CallState * cs)
+static CK_RV
+rpc_C_WrapKey(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1922,13 +1969,13 @@ static CK_RV rpc_C_WrapKey(CallState * cs)
 	IN_ULONG(wrapping_key);
 	IN_ULONG(key);
 	IN_BYTE_BUFFER(wrapped_key, wrapped_key_len);
-	PROCESS_CALL((session, &mechanism, wrapping_key, key, wrapped_key,
-		      wrapped_key_len));
+	PROCESS_CALL((session, &mechanism, wrapping_key, key, wrapped_key, wrapped_key_len));
 	OUT_BYTE_ARRAY(wrapped_key, wrapped_key_len);
 	END_CALL;
 }
 
-static CK_RV rpc_C_UnwrapKey(CallState * cs)
+static CK_RV
+rpc_C_UnwrapKey(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1945,13 +1992,14 @@ static CK_RV rpc_C_UnwrapKey(CallState * cs)
 	IN_ULONG(unwrapping_key);
 	IN_BYTE_ARRAY(wrapped_key, wrapped_key_len);
 	IN_ATTRIBUTE_ARRAY(template, attribute_count);
-	PROCESS_CALL((session, &mechanism, unwrapping_key, wrapped_key,
-		      wrapped_key_len, template, attribute_count, &key));
+	PROCESS_CALL((session, &mechanism, unwrapping_key, wrapped_key, wrapped_key_len, template,
+	              attribute_count, &key));
 	OUT_ULONG(key);
 	END_CALL;
 }
 
-static CK_RV rpc_C_DeriveKey(CallState * cs)
+static CK_RV
+rpc_C_DeriveKey(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_MECHANISM mechanism;
@@ -1965,13 +2013,13 @@ static CK_RV rpc_C_DeriveKey(CallState * cs)
 	IN_MECHANISM(mechanism);
 	IN_ULONG(base_key);
 	IN_ATTRIBUTE_ARRAY(template, attribute_count);
-	PROCESS_CALL((session, &mechanism, base_key, template, attribute_count,
-		      &key));
+	PROCESS_CALL((session, &mechanism, base_key, template, attribute_count, &key));
 	OUT_ULONG(key);
 	END_CALL;
 }
 
-static CK_RV rpc_C_SeedRandom(CallState * cs)
+static CK_RV
+rpc_C_SeedRandom(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR seed;
@@ -1984,7 +2032,8 @@ static CK_RV rpc_C_SeedRandom(CallState * cs)
 	END_CALL;
 }
 
-static CK_RV rpc_C_GenerateRandom(CallState * cs)
+static CK_RV
+rpc_C_GenerateRandom(CallState *cs)
 {
 	CK_SESSION_HANDLE session;
 	CK_BYTE_PTR random_data;
@@ -1994,7 +2043,8 @@ static CK_RV rpc_C_GenerateRandom(CallState * cs)
 	IN_ULONG(session);
 	IN_BYTE_BUFFER(random_data, random_len);
 	if (random_len == NULL_PTR) {
-		_ret = PARSE_ERROR; goto _cleanup;
+		_ret = PARSE_ERROR;
+		goto _cleanup;
 	}
 	PROCESS_CALL((session, random_data, *random_len));
 	OUT_BYTE_ARRAY(random_data, random_len);
@@ -2005,7 +2055,8 @@ static CK_RV rpc_C_GenerateRandom(CallState * cs)
  * DISPATCH THREAD HANDLING
  */
 
-static int dispatch_call(CallState * cs)
+static int
+dispatch_call(CallState *cs)
 {
 	GckRpcMessage *req, *resp;
 	CK_RV ret = CKR_OK;
@@ -2019,8 +2070,8 @@ static int dispatch_call(CallState * cs)
 	assert(req->call_id > GCK_RPC_CALL_ERROR);
 	assert(req->call_id < GCK_RPC_CALL_MAX);
 
-	debug(("dispatch: >>> %s (call_id=%d, sock=%d)",
-		    gck_rpc_calls[req->call_id].name, req->call_id, cs->sock));
+	debug(("dispatch: >>> %s (call_id=%d, sock=%d)", gck_rpc_calls[req->call_id].name,
+	       req->call_id, cs->sock));
 
 	/* Prepare a response for the function to fill in */
 	if (!gck_rpc_message_prep(resp, req->call_id, GCK_RPC_RESPONSE)) {
@@ -2030,77 +2081,77 @@ static int dispatch_call(CallState * cs)
 
 	switch (req->call_id) {
 
-#define CASE_CALL(name) \
-		case GCK_RPC_CALL_##name: \
-			ret = rpc_##name (cs); \
-			break;
+#define CASE_CALL(name)               \
+	case GCK_RPC_CALL_##name:     \
+		ret = rpc_##name(cs); \
+		break;
 		CASE_CALL(C_Initialize)
-		    CASE_CALL(C_Finalize)
-		    CASE_CALL(C_GetInfo)
-		    CASE_CALL(C_GetSlotList)
-		    CASE_CALL(C_GetSlotInfo)
-		    CASE_CALL(C_GetTokenInfo)
-		    CASE_CALL(C_GetMechanismList)
-		    CASE_CALL(C_GetMechanismInfo)
-		    CASE_CALL(C_InitToken)
-		    CASE_CALL(C_WaitForSlotEvent)
-		    CASE_CALL(C_OpenSession)
-		    CASE_CALL(C_CloseSession)
-		    CASE_CALL(C_CloseAllSessions)
-		    CASE_CALL(C_GetFunctionStatus)
-		    CASE_CALL(C_CancelFunction)
-		    CASE_CALL(C_GetSessionInfo)
-		    CASE_CALL(C_InitPIN)
-		    CASE_CALL(C_SetPIN)
-		    CASE_CALL(C_GetOperationState)
-		    CASE_CALL(C_SetOperationState)
-		    CASE_CALL(C_Login)
-		    CASE_CALL(C_Logout)
-		    CASE_CALL(C_CreateObject)
-		    CASE_CALL(C_CopyObject)
-		    CASE_CALL(C_DestroyObject)
-		    CASE_CALL(C_GetObjectSize)
-		    CASE_CALL(C_GetAttributeValue)
-		    CASE_CALL(C_SetAttributeValue)
-		    CASE_CALL(C_FindObjectsInit)
-		    CASE_CALL(C_FindObjects)
-		    CASE_CALL(C_FindObjectsFinal)
-		    CASE_CALL(C_EncryptInit)
-		    CASE_CALL(C_Encrypt)
-		    CASE_CALL(C_EncryptUpdate)
-		    CASE_CALL(C_EncryptFinal)
-		    CASE_CALL(C_DecryptInit)
-		    CASE_CALL(C_Decrypt)
-		    CASE_CALL(C_DecryptUpdate)
-		    CASE_CALL(C_DecryptFinal)
-		    CASE_CALL(C_DigestInit)
-		    CASE_CALL(C_Digest)
-		    CASE_CALL(C_DigestUpdate)
-		    CASE_CALL(C_DigestKey)
-		    CASE_CALL(C_DigestFinal)
-		    CASE_CALL(C_SignInit)
-		    CASE_CALL(C_Sign)
-		    CASE_CALL(C_SignUpdate)
-		    CASE_CALL(C_SignFinal)
-		    CASE_CALL(C_SignRecoverInit)
-		    CASE_CALL(C_SignRecover)
-		    CASE_CALL(C_VerifyInit)
-		    CASE_CALL(C_Verify)
-		    CASE_CALL(C_VerifyUpdate)
-		    CASE_CALL(C_VerifyFinal)
-		    CASE_CALL(C_VerifyRecoverInit)
-		    CASE_CALL(C_VerifyRecover)
-		    CASE_CALL(C_DigestEncryptUpdate)
-		    CASE_CALL(C_DecryptDigestUpdate)
-		    CASE_CALL(C_SignEncryptUpdate)
-		    CASE_CALL(C_DecryptVerifyUpdate)
-		    CASE_CALL(C_GenerateKey)
-		    CASE_CALL(C_GenerateKeyPair)
-		    CASE_CALL(C_WrapKey)
-		    CASE_CALL(C_UnwrapKey)
-		    CASE_CALL(C_DeriveKey)
-		    CASE_CALL(C_SeedRandom)
-		    CASE_CALL(C_GenerateRandom)
+		CASE_CALL(C_Finalize)
+		CASE_CALL(C_GetInfo)
+		CASE_CALL(C_GetSlotList)
+		CASE_CALL(C_GetSlotInfo)
+		CASE_CALL(C_GetTokenInfo)
+		CASE_CALL(C_GetMechanismList)
+		CASE_CALL(C_GetMechanismInfo)
+		CASE_CALL(C_InitToken)
+		CASE_CALL(C_WaitForSlotEvent)
+		CASE_CALL(C_OpenSession)
+		CASE_CALL(C_CloseSession)
+		CASE_CALL(C_CloseAllSessions)
+		CASE_CALL(C_GetFunctionStatus)
+		CASE_CALL(C_CancelFunction)
+		CASE_CALL(C_GetSessionInfo)
+		CASE_CALL(C_InitPIN)
+		CASE_CALL(C_SetPIN)
+		CASE_CALL(C_GetOperationState)
+		CASE_CALL(C_SetOperationState)
+		CASE_CALL(C_Login)
+		CASE_CALL(C_Logout)
+		CASE_CALL(C_CreateObject)
+		CASE_CALL(C_CopyObject)
+		CASE_CALL(C_DestroyObject)
+		CASE_CALL(C_GetObjectSize)
+		CASE_CALL(C_GetAttributeValue)
+		CASE_CALL(C_SetAttributeValue)
+		CASE_CALL(C_FindObjectsInit)
+		CASE_CALL(C_FindObjects)
+		CASE_CALL(C_FindObjectsFinal)
+		CASE_CALL(C_EncryptInit)
+		CASE_CALL(C_Encrypt)
+		CASE_CALL(C_EncryptUpdate)
+		CASE_CALL(C_EncryptFinal)
+		CASE_CALL(C_DecryptInit)
+		CASE_CALL(C_Decrypt)
+		CASE_CALL(C_DecryptUpdate)
+		CASE_CALL(C_DecryptFinal)
+		CASE_CALL(C_DigestInit)
+		CASE_CALL(C_Digest)
+		CASE_CALL(C_DigestUpdate)
+		CASE_CALL(C_DigestKey)
+		CASE_CALL(C_DigestFinal)
+		CASE_CALL(C_SignInit)
+		CASE_CALL(C_Sign)
+		CASE_CALL(C_SignUpdate)
+		CASE_CALL(C_SignFinal)
+		CASE_CALL(C_SignRecoverInit)
+		CASE_CALL(C_SignRecover)
+		CASE_CALL(C_VerifyInit)
+		CASE_CALL(C_Verify)
+		CASE_CALL(C_VerifyUpdate)
+		CASE_CALL(C_VerifyFinal)
+		CASE_CALL(C_VerifyRecoverInit)
+		CASE_CALL(C_VerifyRecover)
+		CASE_CALL(C_DigestEncryptUpdate)
+		CASE_CALL(C_DecryptDigestUpdate)
+		CASE_CALL(C_SignEncryptUpdate)
+		CASE_CALL(C_DecryptVerifyUpdate)
+		CASE_CALL(C_GenerateKey)
+		CASE_CALL(C_GenerateKeyPair)
+		CASE_CALL(C_WrapKey)
+		CASE_CALL(C_UnwrapKey)
+		CASE_CALL(C_DeriveKey)
+		CASE_CALL(C_SeedRandom)
+		CASE_CALL(C_GenerateRandom)
 #undef CASE_CALL
 	default:
 		/* This should have been caught by the parse code */
@@ -2112,22 +2163,19 @@ static int dispatch_call(CallState * cs)
 
 		/* Parsing errors? */
 		if (gck_rpc_message_buffer_error(req)) {
-			gck_rpc_warn
-			    ("invalid request from module, probably too short");
+			gck_rpc_warn("invalid request from module, probably too short");
 			ret = PARSE_ERROR;
 		}
 
 		/* Out of memory errors? */
 		if (gck_rpc_message_buffer_error(resp)) {
-			gck_rpc_warn
-			    ("out of memory error putting together message");
+			gck_rpc_warn("out of memory error putting together message");
 			ret = PREP_ERROR;
 		}
 	}
 
-	debug(("dispatch: <<< %s => 0x%lX (%s)",
-		    gck_rpc_calls[req->call_id].name, (unsigned long)ret,
-		    ret == CKR_OK ? "OK" : "ERROR"));
+	debug(("dispatch: <<< %s => 0x%lX (%s)", gck_rpc_calls[req->call_id].name,
+	       (unsigned long)ret, ret == CKR_OK ? "OK" : "ERROR"));
 
 	/* A filled in response */
 	if (ret == CKR_OK) {
@@ -2142,14 +2190,12 @@ static int dispatch_call(CallState * cs)
 		assert(resp->call_type == GCK_RPC_RESPONSE);
 		assert(resp->call_id == req->call_id);
 		assert(gck_rpc_calls[resp->call_id].response);
-		assert(strcmp(gck_rpc_calls[resp->call_id].response,
-			      resp->signature) == 0);
+		assert(strcmp(gck_rpc_calls[resp->call_id].response, resp->signature) == 0);
 
 		/* Fill in an error respnose */
 	} else {
-		if (!gck_rpc_message_prep
-		    (resp, GCK_RPC_CALL_ERROR, GCK_RPC_RESPONSE)
-		    || !gck_rpc_message_write_ulong(resp, (uint32_t) ret)
+		if (!gck_rpc_message_prep(resp, GCK_RPC_CALL_ERROR, GCK_RPC_RESPONSE)
+		    || !gck_rpc_message_write_ulong(resp, (uint32_t)ret)
 		    || gck_rpc_message_buffer_error(resp)) {
 			gck_rpc_warn("out of memory responding with error");
 			return 0;
@@ -2159,7 +2205,8 @@ static int dispatch_call(CallState * cs)
 	return 1;
 }
 
-static int read_all(CallState *cs, void *data, size_t len)
+static int
+read_all(CallState *cs, void *data, size_t len)
 {
 	int r;
 
@@ -2175,13 +2222,13 @@ static int read_all(CallState *cs, void *data, size_t len)
 			r = recv(cs->sock, data, len, 0);
 
 		if (r == 0) {
-			debug(("read_all: EOF from client (sock=%d, remaining=%zu)",
-				    cs->sock, len));
+			debug(
+			    ("read_all: EOF from client (sock=%d, remaining=%zu)", cs->sock, len));
 			return 0;
 		} else if (r == -1) {
 			if (errno != EAGAIN && errno != EINTR) {
 				gck_rpc_warn("read_all: error (sock=%d, remaining=%zu): %s",
-					     cs->sock, len, strerror(errno));
+				             cs->sock, len, strerror(errno));
 				return 0;
 			}
 		} else {
@@ -2192,7 +2239,8 @@ static int read_all(CallState *cs, void *data, size_t len)
 	return 1;
 }
 
-static int write_all(CallState *cs, void *data, size_t len)
+static int
+write_all(CallState *cs, void *data, size_t len)
 {
 	int r;
 
@@ -2203,18 +2251,18 @@ static int write_all(CallState *cs, void *data, size_t len)
 	while (len > 0) {
 
 		if (cs->conn_ssl)
-			r = gck_rpc_tls_write_all_conn(cs->conn_ssl, (void *) data, len);
+			r = gck_rpc_tls_write_all_conn(cs->conn_ssl, (void *)data, len);
 		else
-            r = send(cs->sock, data, len, MSG_NOSIGNAL);
+			r = send(cs->sock, data, len, MSG_NOSIGNAL);
 
 		if (r == -1) {
 			if (errno == EPIPE) {
 				debug(("write_all: EPIPE from client (sock=%d, remaining=%zu)",
-				    cs->sock, len));
+				       cs->sock, len));
 				return 0;
 			} else if (errno != EAGAIN && errno != EINTR) {
-				debug(("write_all: error (sock=%d, remaining=%zu): %s",
-					     cs->sock, len, strerror(errno)));
+				debug(("write_all: error (sock=%d, remaining=%zu): %s", cs->sock,
+				       len, strerror(errno)));
 				return 0;
 			}
 		} else {
@@ -2226,7 +2274,8 @@ static int write_all(CallState *cs, void *data, size_t len)
 	return 1;
 }
 
-static void run_dispatch_loop(CallState *cs)
+static void
+run_dispatch_loop(CallState *cs)
 {
 	unsigned char buf[4];
 	uint32_t len, res;
@@ -2234,31 +2283,29 @@ static void run_dispatch_loop(CallState *cs)
 
 	assert(cs->sock != -1);
 
-	if ((res = getnameinfo((struct sockaddr *) & cs->addr, cs->addrlen,
-			       hoststr, sizeof(hoststr), portstr, sizeof(portstr),
-			       NI_NUMERICHOST | NI_NUMERICSERV)) != 0) {
-		gck_rpc_warn("couldn't call getnameinfo on client addr: %.100s",
-			     gai_strerror(res));
+	if ((res = getnameinfo((struct sockaddr *)&cs->addr, cs->addrlen, hoststr, sizeof(hoststr),
+	                       portstr, sizeof(portstr), NI_NUMERICHOST | NI_NUMERICSERV))
+	    != 0) {
+		gck_rpc_warn("couldn't call getnameinfo on client addr: %.100s", gai_strerror(res));
 		hoststr[0] = portstr[0] = '\0';
 	}
 
 	/* Enable TLS for this socket (per-connection SSL) */
 	if (cs->tls) {
-		if (! gck_rpc_start_tls_conn(cs->tls, cs->sock,
-					     &cs->conn_ssl, &cs->conn_bio)) {
+		if (!gck_rpc_start_tls_conn(cs->tls, cs->sock, &cs->conn_ssl, &cs->conn_bio)) {
 			debug(("Can't enable TLS (health probe?)"));
-			return ;
+			return;
 		}
 	}
 
 	/* The client application */
-	if (! cs->read(cs, (void *)&cs->appid, sizeof (cs->appid))) {
+	if (!cs->read(cs, (void *)&cs->appid, sizeof(cs->appid))) {
 		debug(("Can't read appid (health probe?)"));
-		return ;
+		return;
 	}
 
-	gck_rpc_log("New session %d-%d (client %s, port %s)\n", (uint32_t) (cs->appid >> 32),
-		    (uint32_t) cs->appid, hoststr, portstr);
+	gck_rpc_log("New session %d-%d (client %s, port %s)\n", (uint32_t)(cs->appid >> 32),
+	            (uint32_t)cs->appid, hoststr, portstr);
 
 	/* Setup our buffers */
 	if (!call_init(cs)) {
@@ -2267,24 +2314,23 @@ static void run_dispatch_loop(CallState *cs)
 	}
 
 	/* The main thread loop */
-	debug(("dispatch-loop: start (sock=%d, client %s:%s)",
-		    cs->sock, hoststr, portstr));
+	debug(("dispatch-loop: start (sock=%d, client %s:%s)", cs->sock, hoststr, portstr));
 
 	while (TRUE) {
 
 		call_reset(cs);
 
 		/* Read the number of bytes ... */
-		if (! cs->read(cs, buf, 4)) {
-			debug(("dispatch-loop: client disconnected (read header failed, sock=%d)", cs->sock));
+		if (!cs->read(cs, buf, 4)) {
+			debug(("dispatch-loop: client disconnected (read header failed, sock=%d)",
+			       cs->sock));
 			break;
 		}
 
 		/* Calculate the number of bytes */
 		len = egg_buffer_decode_uint32(buf);
 		if (len >= 0x0FFFFFFF) {
-			gck_rpc_warn
-			    ("invalid message size from module: %u bytes", len);
+			gck_rpc_warn("invalid message size from module: %u bytes", len);
 			break;
 		}
 
@@ -2297,7 +2343,9 @@ static void run_dispatch_loop(CallState *cs)
 
 		/* ... and read/parse in the actual message */
 		if (!cs->read(cs, cs->req->buffer.buf, len)) {
-			debug(("dispatch-loop: client disconnected (read body failed, sock=%d, expected %u bytes)", cs->sock, len));
+			debug(("dispatch-loop: client disconnected (read body failed, sock=%d, "
+			       "expected %u bytes)",
+			       cs->sock, len));
 			break;
 		}
 
@@ -2316,15 +2364,15 @@ static void run_dispatch_loop(CallState *cs)
 
 		/* .. send back response length, and then response data */
 		egg_buffer_encode_uint32(buf, cs->resp->buffer.len);
-		if (!cs->write(cs, buf, 4) ||
-		    !cs->write(cs, cs->resp->buffer.buf, cs->resp->buffer.len)) {
+		if (!cs->write(cs, buf, 4)
+		    || !cs->write(cs, cs->resp->buffer.buf, cs->resp->buffer.len)) {
 			debug(("dispatch-loop: write response failed (sock=%d)", cs->sock));
 			break;
 		}
 	}
 
-	gck_rpc_log("dispatch-loop: end (sock=%d, client %s:%s) — cleaning up sessions",
-		    cs->sock, hoststr, portstr);
+	gck_rpc_log("dispatch-loop: end (sock=%d, client %s:%s) — cleaning up sessions", cs->sock,
+	            hoststr, portstr);
 
 	/* Clean up per-connection TLS before sessions */
 	if (cs->conn_ssl) {
@@ -2336,7 +2384,8 @@ static void run_dispatch_loop(CallState *cs)
 	call_uninit(cs);
 }
 
-static void *run_dispatch_thread(void *arg)
+static void *
+run_dispatch_thread(void *arg)
 {
 	CallState *cs = arg;
 	assert(cs->sock != -1);
@@ -2362,9 +2411,12 @@ static void *run_dispatch_thread(void *arg)
 static int pkcs11_socket = -1;
 
 /* The unix socket path, that we listen on */
-static char pkcs11_socket_path[MAXPATHLEN] = { 0, };
+static char pkcs11_socket_path[MAXPATHLEN] = {
+	0,
+};
 
-void gck_rpc_layer_accept(GckRpcTlsState *tls)
+void
+gck_rpc_layer_accept(GckRpcTlsState *tls)
 {
 	struct sockaddr_storage addr;
 	DispatchState *ds, **here;
@@ -2390,8 +2442,7 @@ void gck_rpc_layer_accept(GckRpcTlsState *tls)
 	addrlen = sizeof(addr);
 	new_fd = accept(pkcs11_socket, (struct sockaddr *)&addr, &addrlen);
 	if (new_fd < 0) {
-		gck_rpc_warn("cannot accept pkcs11 connection: %s",
-			     strerror(errno));
+		gck_rpc_warn("cannot accept pkcs11 connection: %s", strerror(errno));
 		return;
 	}
 
@@ -2403,14 +2454,13 @@ void gck_rpc_layer_accept(GckRpcTlsState *tls)
 	}
 
 	ds->cs.sock = new_fd;
-        ds->cs.read = (int (*)(void *, unsigned char *, unsigned long))&read_all;
-        ds->cs.write = (int (*)(void *, unsigned char *, unsigned long))&write_all;
+	ds->cs.read = (int (*)(void *, unsigned char *, unsigned long))&read_all;
+	ds->cs.write = (int (*)(void *, unsigned char *, unsigned long))&write_all;
 	ds->cs.addr = addr;
 	ds->cs.addrlen = addrlen;
 	ds->cs.tls = tls;
 
-	error = pthread_create(&ds->thread, NULL,
-			       run_dispatch_thread, &(ds->cs));
+	error = pthread_create(&ds->thread, NULL, run_dispatch_thread, &(ds->cs));
 	if (error) {
 		gck_rpc_warn("couldn't start thread: %s", strerror(errno));
 		close(new_fd);
@@ -2423,30 +2473,33 @@ void gck_rpc_layer_accept(GckRpcTlsState *tls)
 	pthread_mutex_unlock(&pkcs11_dispatchers_mutex);
 }
 
-static int _inetd_read(CallState *cs, void *data, size_t len)
+static int
+_inetd_read(CallState *cs, void *data, size_t len)
 {
 	assert(cs->sock >= 0);
 	return read(cs->sock, data, len);
 }
 
-static int _inetd_write(CallState *cs, void *data, size_t len)
+static int
+_inetd_write(CallState *cs, void *data, size_t len)
 {
 	assert(cs->sock >= 0);
 	return write(cs->sock, data, len);
 }
 
-void gck_rpc_layer_inetd(CK_FUNCTION_LIST_PTR module)
+void
+gck_rpc_layer_inetd(CK_FUNCTION_LIST_PTR module)
 {
-   CallState cs;
+	CallState cs;
 
-   memset(&cs, 0, sizeof(cs));
-   cs.sock = STDIN_FILENO;
-   cs.read = (int (*)(void *, unsigned char *, unsigned long))&_inetd_read;
-   cs.write = (int (*)(void *, unsigned char *, unsigned long))&_inetd_write;
+	memset(&cs, 0, sizeof(cs));
+	cs.sock = STDIN_FILENO;
+	cs.read = (int (*)(void *, unsigned char *, unsigned long))&_inetd_read;
+	cs.write = (int (*)(void *, unsigned char *, unsigned long))&_inetd_write;
 
-   pkcs11_module = module;
+	pkcs11_module = module;
 
-   run_dispatch_thread(&cs);
+	run_dispatch_thread(&cs);
 }
 
 /*
@@ -2456,20 +2509,21 @@ void gck_rpc_layer_inetd(CK_FUNCTION_LIST_PTR module)
  *
  * Returns -1 on failure, and the socket fd otherwise.
  */
-static int _get_listening_socket(const char *proto, const char *host, const char *port)
+static int
+_get_listening_socket(const char *proto, const char *host, const char *port)
 {
 	char hoststr[NI_MAXHOST], portstr[NI_MAXSERV];
 	struct addrinfo *ai, *first, hints;
 	int res, sock, one = 1;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_flags = AI_PASSIVE;		/* Want addr for bind() */
-	hints.ai_family = AF_UNSPEC;		/* Either IPv4 or IPv6 */
-	hints.ai_socktype = SOCK_STREAM;	/* Only stream oriented sockets */
+	hints.ai_flags = AI_PASSIVE;     /* Want addr for bind() */
+	hints.ai_family = AF_UNSPEC;     /* Either IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM; /* Only stream oriented sockets */
 
 	if ((res = getaddrinfo(host, port, &hints, &ai)) < 0) {
-		gck_rpc_warn("couldn't resolve host '%.100s' or service '%.100s' : %.100s\n",
-			     host, port, gai_strerror(res));
+		gck_rpc_warn("couldn't resolve host '%.100s' or service '%.100s' : %.100s\n", host,
+		             port, gai_strerror(res));
 		return -1;
 	}
 
@@ -2483,19 +2537,19 @@ static int _get_listening_socket(const char *proto, const char *host, const char
 		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 
 		if (sock >= 0) {
-			if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
-				       (char *)&one, sizeof (one)) == -1) {
+			if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one))
+			    == -1) {
 				gck_rpc_warn("couldn't set pkcs11 "
-					     "socket protocol options (%.100s %.100s): %.100s",
-					     host, port, strerror (errno));
+				             "socket protocol options (%.100s %.100s): %.100s",
+				             host, port, strerror(errno));
 				goto next;
 			}
 
-			if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-				       (char *)&one, sizeof(one)) == -1) {
-				gck_rpc_warn
-					("couldn't set pkcs11 socket options (%.100s %.100s): %.100s",
-					 host, port, strerror(errno));
+			if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one))
+			    == -1) {
+				gck_rpc_warn(
+				    "couldn't set pkcs11 socket options (%.100s %.100s): %.100s",
+				    host, port, strerror(errno));
 				goto next;
 			}
 
@@ -2510,39 +2564,41 @@ static int _get_listening_socket(const char *proto, const char *host, const char
 	}
 
 	if (sock < 0) {
-		gck_rpc_warn("couldn't create pkcs11 socket (%.100s %.100s): %.100s\n",
-			     host, port, strerror(errno));
+		gck_rpc_warn("couldn't create pkcs11 socket (%.100s %.100s): %.100s\n", host, port,
+		             strerror(errno));
 		sock = -1;
 		goto out;
 	}
 
 	if (listen(sock, PKCS11PROXY_LISTEN_BACKLOG) < 0) {
-		gck_rpc_warn("couldn't listen on pkcs11 socket (%.100s %.100s): %.100s",
-			     host, port, strerror(errno));
+		gck_rpc_warn("couldn't listen on pkcs11 socket (%.100s %.100s): %.100s", host, port,
+		             strerror(errno));
 		sock = -1;
 		goto out;
 	}
 
 	/* Format a string describing the socket we're listening on into pkcs11_socket_path */
-	if ((res = getnameinfo(ai->ai_addr, ai->ai_addrlen,
-			       hoststr, sizeof(hoststr), portstr, sizeof(portstr),
-			       NI_NUMERICHOST | NI_NUMERICSERV)) != 0) {
+	if ((res = getnameinfo(ai->ai_addr, ai->ai_addrlen, hoststr, sizeof(hoststr), portstr,
+	                       sizeof(portstr), NI_NUMERICHOST | NI_NUMERICSERV))
+	    != 0) {
 		gck_rpc_warn("couldn't call getnameinfo on pkcs11 socket (%.100s %.100s): %.100s",
-			     host, port, gai_strerror(res));
+		             host, port, gai_strerror(res));
 		sock = -1;
 		goto out;
 	}
 
 	snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path),
-		 (ai->ai_family == AF_INET6) ? "%s://[%s]:%s" : "%s://%s:%s", proto, hoststr, portstr);
+	         (ai->ai_family == AF_INET6) ? "%s://[%s]:%s" : "%s://%s:%s", proto, hoststr,
+	         portstr);
 
- out:
+out:
 	freeaddrinfo(first);
 
 	return sock;
 }
 
-int gck_rpc_layer_initialize(const char *prefix, CK_FUNCTION_LIST_PTR module)
+int
+gck_rpc_layer_initialize(const char *prefix, CK_FUNCTION_LIST_PTR module)
 {
 	struct sockaddr_un addr;
 	int sock;
@@ -2561,21 +2617,20 @@ int gck_rpc_layer_initialize(const char *prefix, CK_FUNCTION_LIST_PTR module)
 
 	memset(&addr, 0, sizeof(addr));
 
-#ifdef  __MINGW32__
-        {
+#ifdef __MINGW32__
+	{
 		WSADATA wsaData;
 		int iResult;
 
-		iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+		iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 		if (iResult != 0) {
 			gck_rpc_warn("WSAStartup failed: %d\n", iResult);
 			return -1;
 		}
-        }
+	}
 #endif
 
-	if (!strncmp("tcp://", prefix, 6) ||
-	    !strncmp("tls://", prefix, 6)) {
+	if (!strncmp("tcp://", prefix, 6) || !strncmp("tls://", prefix, 6)) {
 		/*
 		 * TCP socket
 		 */
@@ -2584,7 +2639,7 @@ int gck_rpc_layer_initialize(const char *prefix, CK_FUNCTION_LIST_PTR module)
 
 		snprintf(proto, sizeof(proto), "%s", prefix);
 
-		if (! gck_rpc_parse_host_port(prefix + 6, &host, &port)) {
+		if (!gck_rpc_parse_host_port(prefix + 6, &host, &port)) {
 			free(host);
 			return -1;
 		}
@@ -2599,31 +2654,29 @@ int gck_rpc_layer_initialize(const char *prefix, CK_FUNCTION_LIST_PTR module)
 		/*
 		 * UNIX domain socket
 		 */
-		snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path),
-			 "%s/socket.pkcs11", prefix);
+		snprintf(pkcs11_socket_path, sizeof(pkcs11_socket_path), "%s/socket.pkcs11",
+		         prefix);
 
 		sock = socket(AF_UNIX, SOCK_STREAM, 0);
 
 		if (sock < 0) {
-			gck_rpc_warn("couldn't create pkcs11 socket: %s",
-				     strerror(errno));
+			gck_rpc_warn("couldn't create pkcs11 socket: %s", strerror(errno));
 			return -1;
 		}
 
 		addr.sun_family = AF_UNIX;
 		unlink(pkcs11_socket_path);
-		strncpy(addr.sun_path, pkcs11_socket_path,
-			sizeof(addr.sun_path));
+		strncpy(addr.sun_path, pkcs11_socket_path, sizeof(addr.sun_path));
 
 		if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-			gck_rpc_warn("couldn't bind to pkcs11 socket: %s: %s",
-				     pkcs11_socket_path, strerror(errno));
+			gck_rpc_warn("couldn't bind to pkcs11 socket: %s: %s", pkcs11_socket_path,
+			             strerror(errno));
 			return -1;
 		}
 
 		if (listen(sock, PKCS11PROXY_LISTEN_BACKLOG) < 0) {
-			gck_rpc_warn("couldn't listen on pkcs11 socket: %s: %s",
-				     pkcs11_socket_path, strerror(errno));
+			gck_rpc_warn("couldn't listen on pkcs11 socket: %s: %s", pkcs11_socket_path,
+			             strerror(errno));
 			return -1;
 		}
 	}
@@ -2637,7 +2690,8 @@ int gck_rpc_layer_initialize(const char *prefix, CK_FUNCTION_LIST_PTR module)
 	return sock;
 }
 
-void gck_rpc_layer_uninitialize(void)
+void
+gck_rpc_layer_uninitialize(void)
 {
 	DispatchState *ds, *next;
 
@@ -2650,9 +2704,8 @@ void gck_rpc_layer_uninitialize(void)
 	pkcs11_socket = -1;
 
 	/* Delete our unix socket */
-	if (pkcs11_socket_path[0] &&
-	    strncmp(pkcs11_socket_path, "tcp://", strlen("tcp://")) != 0 &&
-	    strncmp(pkcs11_socket_path, "tls://", strlen("tls://")) != 0)
+	if (pkcs11_socket_path[0] && strncmp(pkcs11_socket_path, "tcp://", strlen("tcp://")) != 0
+	    && strncmp(pkcs11_socket_path, "tls://", strlen("tls://")) != 0)
 		unlink(pkcs11_socket_path);
 	pkcs11_socket_path[0] = 0;
 
@@ -2683,7 +2736,8 @@ void gck_rpc_layer_uninitialize(void)
  * Reduce the syscalls allowed to a subset of the syscalls allowed for
  * the parent thread.
  */
-static int _install_dispatch_syscall_filter(int use_tls)
+static int
+_install_dispatch_syscall_filter(int use_tls)
 {
 	(void)use_tls;
 #ifdef SECCOMP
@@ -2701,30 +2755,30 @@ static int _install_dispatch_syscall_filter(int use_tls)
 	 * These are the basic syscalls needed to be able to use
 	 * the syscall-reporter to figure out the rest
 	 */
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getpid), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(gettid), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getpid), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(gettid), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0);
 
 	/*
 	 * Network related syscalls.
 	 */
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(pselect6), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(shutdown), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(setsockopt), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getsockname), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getpeername), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(ioctl), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(pselect6), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(shutdown), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(setsockopt), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockname), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getpeername), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ioctl), 0);
 
 	/*
 	 * TLS cert-based — no per-connection file I/O needed
@@ -2732,53 +2786,53 @@ static int _install_dispatch_syscall_filter(int use_tls)
 	 * TLS 1.3 needs getrandom() for per-connection key material.
 	 */
 	if (use_tls)
-		seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getrandom), 0);
+		seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getrandom), 0);
 
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
 
 	/*
 	 * pthreads and memory management.
 	 */
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 1,
-			 SCMP_A2(SCMP_CMP_EQ, PROT_READ|PROT_WRITE));
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(set_tid_address), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sigaltstack), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(sysinfo), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(prlimit64), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 1,
+	                 SCMP_A2(SCMP_CMP_EQ, PROT_READ | PROT_WRITE));
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(set_tid_address), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sigaltstack), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sysinfo), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(prlimit64), 0);
 #ifdef __NR_rseq
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(rseq), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rseq), 0);
 #endif
 
 	/*
 	 * getnameinfo with NI_NUMERICHOST may still probe NSS.
 	 */
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(socket), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(connect), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(socket), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(connect), 0);
 
 	/*
 	 * SoftHSM 2.x
 	 */
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getcwd), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(stat), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(open), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(openat), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(newfstatat), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(lseek), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(access), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(fsync), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(unlink), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(getdents64), 0);
-	seccomp_rule_add(ctx,SCMP_ACT_ALLOW, SCMP_SYS(pread64), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getcwd), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(stat), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(openat), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(newfstatat), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(lseek), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(access), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fsync), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(unlink), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(select), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getdents64), 0);
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(pread64), 0);
 
 	rc = seccomp_load(ctx);
 	if (rc < 0)
@@ -2791,7 +2845,7 @@ failure_scmp:
 	errno = -rc;
 	gck_rpc_warn("Seccomp filter initialization failed, errno = %u\n", errno);
 	return errno;
-#else /* SECCOMP */
-        return 0;
+#else  /* SECCOMP */
+	return 0;
 #endif /* SECCOMP */
 }

@@ -27,10 +27,11 @@
 #include "gck-rpc-private.h"
 
 #include <stdarg.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-static void do_log(const char *pref, const char *msg, va_list va)
+static void
+do_log(const char *pref, const char *msg, va_list va)
 {
 	char buffer[1024];
 	size_t len = 0;
@@ -44,7 +45,8 @@ static void do_log(const char *pref, const char *msg, va_list va)
 	gck_rpc_log(buffer);
 }
 
-void gck_rpc_warn(const char *msg, ...)
+void
+gck_rpc_warn(const char *msg, ...)
 {
 	va_list va;
 	va_start(va, msg);
@@ -52,7 +54,8 @@ void gck_rpc_warn(const char *msg, ...)
 	va_end(va);
 }
 
-void gck_rpc_debug(const char *msg, ...)
+void
+gck_rpc_debug(const char *msg, ...)
 {
 	va_list va;
 	va_start(va, msg);
@@ -60,16 +63,17 @@ void gck_rpc_debug(const char *msg, ...)
 	va_end(va);
 }
 
-int gck_rpc_mechanism_is_supported(CK_MECHANISM_TYPE mech)
+int
+gck_rpc_mechanism_is_supported(CK_MECHANISM_TYPE mech)
 {
-	if (gck_rpc_mechanism_has_no_parameters(mech) ||
-	    gck_rpc_mechanism_has_sane_parameters(mech))
+	if (gck_rpc_mechanism_has_no_parameters(mech)
+	    || gck_rpc_mechanism_has_sane_parameters(mech))
 		return 1;
 	return 0;
 }
 
 void
-gck_rpc_mechanism_list_purge(CK_MECHANISM_TYPE_PTR mechs, CK_ULONG * n_mechs)
+gck_rpc_mechanism_list_purge(CK_MECHANISM_TYPE_PTR mechs, CK_ULONG *n_mechs)
 {
 	int i;
 
@@ -77,12 +81,12 @@ gck_rpc_mechanism_list_purge(CK_MECHANISM_TYPE_PTR mechs, CK_ULONG * n_mechs)
 	assert(n_mechs);
 
 	for (i = 0; i < (int)(*n_mechs); ++i) {
-		if (!gck_rpc_mechanism_has_no_parameters(mechs[i]) &&
-		    !gck_rpc_mechanism_has_sane_parameters(mechs[i])) {
+		if (!gck_rpc_mechanism_has_no_parameters(mechs[i])
+		    && !gck_rpc_mechanism_has_sane_parameters(mechs[i])) {
 
 			/* Remove the mechanism from the list */
 			memmove(&mechs[i], &mechs[i + 1],
-				(*n_mechs - i) * sizeof(CK_MECHANISM_TYPE));
+			        (*n_mechs - i) * sizeof(CK_MECHANISM_TYPE));
 
 			--(*n_mechs);
 			--i;
@@ -90,20 +94,22 @@ gck_rpc_mechanism_list_purge(CK_MECHANISM_TYPE_PTR mechs, CK_ULONG * n_mechs)
 	}
 }
 
-int gck_rpc_mechanism_has_sane_parameters(CK_MECHANISM_TYPE type)
+int
+gck_rpc_mechanism_has_sane_parameters(CK_MECHANISM_TYPE type)
 {
 	/* This list is incomplete */
 	switch (type) {
 	case CKM_RSA_PKCS_OAEP:
 	case CKM_RSA_PKCS_PSS:
-    case CKM_AES_CBC_PAD:
+	case CKM_AES_CBC_PAD:
 		return 1;
 	default:
 		return 0;
 	}
 }
 
-int gck_rpc_mechanism_has_no_parameters(CK_MECHANISM_TYPE mech)
+int
+gck_rpc_mechanism_has_no_parameters(CK_MECHANISM_TYPE mech)
 {
 	/* This list is incomplete */
 
@@ -211,7 +217,7 @@ gck_rpc_has_ulong_parameter(CK_ATTRIBUTE_TYPE type)
 	case CKA_KEY_TYPE:
 	case CKA_CERTIFICATE_TYPE:
 	case CKA_HW_FEATURE_TYPE:
-        case CKA_MODULUS_BITS:
+	case CKA_MODULUS_BITS:
 		return 1;
 	default:
 		return 0;
@@ -225,9 +231,9 @@ gck_rpc_has_bad_sized_ulong_parameter(CK_ATTRIBUTE_PTR attr)
 		return 0;
 	/* All this parameters are transmited on the network
 	 * as 64bit integers */
-	if (sizeof (uint64_t) != attr->ulValueLen)
+	if (sizeof(uint64_t) != attr->ulValueLen)
 		return 0;
-	if (sizeof (CK_ULONG) == attr->ulValueLen)
+	if (sizeof(CK_ULONG) == attr->ulValueLen)
 		return 0;
 	return gck_rpc_has_ulong_parameter(attr->type);
 }
@@ -251,7 +257,8 @@ gck_rpc_has_bad_sized_ulong_parameter(CK_ATTRIBUTE_PTR attr)
  *
  * Returns 0 on failure, and 1 on success.
  */
-int gck_rpc_parse_host_port(const char *prefix, char **host, char **port)
+int
+gck_rpc_parse_host_port(const char *prefix, char **host, char **port)
 {
 	char *p = NULL;
 	int is_ipv6;

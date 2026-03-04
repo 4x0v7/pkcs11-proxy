@@ -1,10 +1,10 @@
 #ifndef CONFIG_H
-# define CONFIG_H
+#define CONFIG_H
 
-# define DEBUG_OUTPUT 0 // change to 1 to enable debugging
+#define DEBUG_OUTPUT 0 // change to 1 to enable debugging
 
-# define PKCS11PROXY_LISTEN_BACKLOG 128
-# define PKCS11PROXY_MAX_SESSION_COUNT 16
+#define PKCS11PROXY_LISTEN_BACKLOG    128
+#define PKCS11PROXY_MAX_SESSION_COUNT 16
 
 // TLS 1.3 ciphersuites are configured in gck-rpc-tls.c
 
@@ -12,15 +12,15 @@
 //# define SECCOMP
 
 #ifdef __APPLE__
-# define MSG_NOSIGNAL SO_NOSIGPIPE
+#define MSG_NOSIGNAL SO_NOSIGPIPE
 #endif
 
 #ifdef __MINGW32__
 
-# include <stdint.h>
-# include <stdlib.h>
-# include <limits.h>
-# include <winsock2.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <winsock2.h>
 
 typedef uint32_t __uid32_t;
 typedef uint32_t __gid32_t;
@@ -32,22 +32,23 @@ struct sockaddr_un {
 	char sun_path[PATH_MAX];
 };
 
-enum  {
+enum {
 	SHUT_RD = 0, /* No more receptions.  */
-	SHUT_WR, /* No more transmissions.  */
-	SHUT_RDWR /* No more receptions or transmissions.  */
+	SHUT_WR,     /* No more transmissions.  */
+	SHUT_RDWR    /* No more receptions or transmissions.  */
 };
 
-static inline int inet_aton(const char * cp, struct in_addr *pin)
+static inline int
+inet_aton(const char *cp, struct in_addr *pin)
 {
-        int rc = inet_addr(cp);
-        if (rc == -1 && strcmp(cp, "255.255.255.255"))
-                return 0;
+	int rc = inet_addr(cp);
+	if (rc == -1 && strcmp(cp, "255.255.255.255"))
+		return 0;
 
-        pin->s_addr = rc;
-        return 1;
+	pin->s_addr = rc;
+	return 1;
 }
 
 #endif
 
-#endif	/* CONFIG_H */
+#endif /* CONFIG_H */

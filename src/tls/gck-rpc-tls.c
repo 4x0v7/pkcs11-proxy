@@ -22,15 +22,15 @@
    Original TLS-PSK author: Fredrik Thulin <fredrik@thulin.net>
 */
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "config.h"
 
-#include "gck-rpc-private.h"
-#include "gck-rpc-tls.h"
-#include "gck-rpc-tls-policy.h"
 #include "ext/cjson/cJSON.h"
+#include "gck-rpc-private.h"
+#include "gck-rpc-tls-policy.h"
+#include "gck-rpc-tls.h"
 
 #include <assert.h>
 
@@ -50,15 +50,13 @@
 #endif
 #define warning(x) gck_rpc_warn x
 
-
 /* -----------------------------------------------------------------------------
  * TLS 1.3 CIPHERSUITES
  */
-#define PKCS11PROXY_TLS13_CIPHERSUITES \
-	"TLS_AES_256_GCM_SHA384:" \
+#define PKCS11PROXY_TLS13_CIPHERSUITES  \
+	"TLS_AES_256_GCM_SHA384:"       \
 	"TLS_CHACHA20_POLY1305_SHA256:" \
 	"TLS_AES_128_GCM_SHA256"
-
 
 /* -----------------------------------------------------------------------------
  * HELPER: get env var with optional default
@@ -69,7 +67,6 @@ _getenv_or(const char *name, const char *def)
 	const char *v = getenv(name);
 	return (v && v[0]) ? v : def;
 }
-
 
 /* -----------------------------------------------------------------------------
  * TLS 1.3 certificate-based mTLS
@@ -113,7 +110,8 @@ gck_rpc_init_tls(GckRpcTlsState *state, enum gck_rpc_tls_caller caller)
 
 	if (caller == GCK_RPC_TLS_SERVER) {
 		if (!cert_file || !cert_file[0] || !key_file || !key_file[0]) {
-			gck_rpc_warn("PKCS11_PROXY_TLS_CERT and PKCS11_PROXY_TLS_KEY are required for server");
+			gck_rpc_warn("PKCS11_PROXY_TLS_CERT and PKCS11_PROXY_TLS_KEY are required "
+			             "for server");
 			return 0;
 		}
 	}
@@ -121,8 +119,7 @@ gck_rpc_init_tls(GckRpcTlsState *state, enum gck_rpc_tls_caller caller)
 	/* Create TLS 1.3 context */
 	state->ssl_ctx = SSL_CTX_new(TLS_method());
 
-	if (state->ssl_ctx == NULL
-	    || !SSL_CTX_set_min_proto_version(state->ssl_ctx, TLS1_3_VERSION)
+	if (state->ssl_ctx == NULL || !SSL_CTX_set_min_proto_version(state->ssl_ctx, TLS1_3_VERSION)
 	    || !SSL_CTX_set_max_proto_version(state->ssl_ctx, TLS1_3_VERSION)) {
 		gck_rpc_warn("can't initialize SSL_CTX for TLS 1.3");
 		return 0;
@@ -166,7 +163,7 @@ gck_rpc_init_tls(GckRpcTlsState *state, enum gck_rpc_tls_caller caller)
 	/* Configure peer verification */
 	if (caller == GCK_RPC_TLS_SERVER && require_mtls) {
 		SSL_CTX_set_verify(state->ssl_ctx,
-			SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+		                   SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 		debug(("Server: mTLS required"));
 	} else if (caller == GCK_RPC_TLS_CLIENT) {
 		SSL_CTX_set_verify(state->ssl_ctx, SSL_VERIFY_PEER, NULL);
@@ -193,13 +190,13 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 	const char *server_name;
 
 	state->ssl = SSL_new(state->ssl_ctx);
-	if (! state->ssl) {
+	if (!state->ssl) {
 		warning(("can't initialize SSL"));
 		return 0;
 	}
 
 	state->bio = BIO_new_socket(sock, BIO_NOCLOSE);
-	if (! state->bio) {
+	if (!state->bio) {
 		warning(("can't initialize SSL BIO"));
 		return 0;
 	}
@@ -227,16 +224,15 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 		return 0;
 	}
 
-	gck_rpc_log("TLS handshake OK: %s %s",
-		    SSL_get_version(state->ssl), SSL_get_cipher_name(state->ssl));
+	gck_rpc_log("TLS handshake OK: %s %s", SSL_get_version(state->ssl),
+	            SSL_get_cipher_name(state->ssl));
 
 	/* OID policy verification (optional — skipped when env vars are unset) */
 	if (state->type == GCK_RPC_TLS_SERVER) {
-		const char *policy_repo   = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
+		const char *policy_repo = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
 		const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
 
-		if (policy_repo && policy_repo[0] &&
-		    policy_keyset && policy_keyset[0]) {
+		if (policy_repo && policy_repo[0] && policy_keyset && policy_keyset[0]) {
 			X509 *peer = SSL_get0_peer_certificate(state->ssl);
 			char *json;
 			int json_len;
@@ -253,12 +249,10 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 				return 0;
 			}
 
-			pr = policy_validate_client(json, json_len,
-						    policy_repo, policy_keyset);
+			pr = policy_validate_client(json, json_len, policy_repo, policy_keyset);
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected client: %s",
-					 policy_result_str(pr)));
+				warning(("OID policy rejected client: %s", policy_result_str(pr)));
 				free(json);
 				return 0;
 			}
@@ -267,15 +261,23 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			{
 				cJSON *root = cJSON_ParseWithLength(json, json_len);
 				if (root) {
-					const cJSON *repo = cJSON_GetObjectItemCaseSensitive(root, "repo");
-					const cJSON *workflow = cJSON_GetObjectItemCaseSensitive(root, "workflow");
-					const cJSON *ref = cJSON_GetObjectItemCaseSensitive(root, "ref");
-					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log("OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
-						    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
-						    workflow && cJSON_IsString(workflow) ? workflow->valuestring : "?",
-						    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
-						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					const cJSON *repo
+					    = cJSON_GetObjectItemCaseSensitive(root, "repo");
+					const cJSON *workflow
+					    = cJSON_GetObjectItemCaseSensitive(root, "workflow");
+					const cJSON *ref
+					    = cJSON_GetObjectItemCaseSensitive(root, "ref");
+					const cJSON *keyset
+					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log(
+					    "OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
+					    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
+					    workflow && cJSON_IsString(workflow)
+					        ? workflow->valuestring
+					        : "?",
+					    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
+					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
+					                                     : "?");
 					cJSON_Delete(root);
 				}
 			}
@@ -283,13 +285,12 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 		}
 	} else {
 		/* Client-side: validate server cert OID policy */
-		const char *policy_service   = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
+		const char *policy_service = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
 		const char *policy_namespace = getenv("PKCS11_PROXY_TLS_POLICY_NAMESPACE");
-		const char *policy_keyset    = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
+		const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
 
-		if (policy_service && policy_service[0] &&
-		    policy_namespace && policy_namespace[0] &&
-		    policy_keyset && policy_keyset[0]) {
+		if (policy_service && policy_service[0] && policy_namespace && policy_namespace[0]
+		    && policy_keyset && policy_keyset[0]) {
 			X509 *peer = SSL_get0_peer_certificate(state->ssl);
 			char *json;
 			int json_len;
@@ -306,14 +307,11 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 				return 0;
 			}
 
-			pr = policy_validate_server(json, json_len,
-						    policy_service,
-						    policy_namespace,
-						    policy_keyset);
+			pr = policy_validate_server(json, json_len, policy_service,
+			                            policy_namespace, policy_keyset);
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected server: %s",
-					 policy_result_str(pr)));
+				warning(("OID policy rejected server: %s", policy_result_str(pr)));
 				free(json);
 				return 0;
 			}
@@ -322,13 +320,20 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			{
 				cJSON *root = cJSON_ParseWithLength(json, json_len);
 				if (root) {
-					const cJSON *service = cJSON_GetObjectItemCaseSensitive(root, "service");
-					const cJSON *ns = cJSON_GetObjectItemCaseSensitive(root, "namespace");
-					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log("OID policy OK: service=%s namespace=%s keyset=%s",
-						    service && cJSON_IsString(service) ? service->valuestring : "?",
-						    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
-						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					const cJSON *service
+					    = cJSON_GetObjectItemCaseSensitive(root, "service");
+					const cJSON *ns
+					    = cJSON_GetObjectItemCaseSensitive(root, "namespace");
+					const cJSON *keyset
+					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log(
+					    "OID policy OK: service=%s namespace=%s keyset=%s",
+					    service && cJSON_IsString(service)
+					        ? service->valuestring
+					        : "?",
+					    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
+					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
+					                                     : "?");
 					cJSON_Delete(root);
 				}
 			}
@@ -375,8 +380,7 @@ gck_rpc_close_tls_conn(SSL *ssl)
  * Returns 1 on success, 0 on failure.  Outputs via out_ssl / out_bio.
  */
 int
-gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
-		       SSL **out_ssl, BIO **out_bio)
+gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_bio)
 {
 	SSL *ssl;
 	BIO *bio;
@@ -423,16 +427,14 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 		return 0;
 	}
 
-	gck_rpc_log("TLS handshake OK: %s %s",
-		    SSL_get_version(ssl), SSL_get_cipher_name(ssl));
+	gck_rpc_log("TLS handshake OK: %s %s", SSL_get_version(ssl), SSL_get_cipher_name(ssl));
 
 	/* OID policy verification (optional — skipped when env vars are unset) */
 	if (ctx->type == GCK_RPC_TLS_SERVER) {
-		const char *policy_repo   = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
+		const char *policy_repo = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
 		const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
 
-		if (policy_repo && policy_repo[0] &&
-		    policy_keyset && policy_keyset[0]) {
+		if (policy_repo && policy_repo[0] && policy_keyset && policy_keyset[0]) {
 			X509 *peer = SSL_get0_peer_certificate(ssl);
 			char *json;
 			int json_len;
@@ -451,12 +453,10 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 				return 0;
 			}
 
-			pr = policy_validate_client(json, json_len,
-						    policy_repo, policy_keyset);
+			pr = policy_validate_client(json, json_len, policy_repo, policy_keyset);
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected client: %s",
-					 policy_result_str(pr)));
+				warning(("OID policy rejected client: %s", policy_result_str(pr)));
 				free(json);
 				SSL_free(ssl);
 				return 0;
@@ -466,28 +466,35 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 			{
 				cJSON *root = cJSON_ParseWithLength(json, json_len);
 				if (root) {
-					const cJSON *repo = cJSON_GetObjectItemCaseSensitive(root, "repo");
-					const cJSON *workflow = cJSON_GetObjectItemCaseSensitive(root, "workflow");
-					const cJSON *ref = cJSON_GetObjectItemCaseSensitive(root, "ref");
-					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log("OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
-						    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
-						    workflow && cJSON_IsString(workflow) ? workflow->valuestring : "?",
-						    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
-						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					const cJSON *repo
+					    = cJSON_GetObjectItemCaseSensitive(root, "repo");
+					const cJSON *workflow
+					    = cJSON_GetObjectItemCaseSensitive(root, "workflow");
+					const cJSON *ref
+					    = cJSON_GetObjectItemCaseSensitive(root, "ref");
+					const cJSON *keyset
+					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log(
+					    "OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
+					    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
+					    workflow && cJSON_IsString(workflow)
+					        ? workflow->valuestring
+					        : "?",
+					    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
+					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
+					                                     : "?");
 					cJSON_Delete(root);
 				}
 			}
 			free(json);
 		}
 	} else {
-		const char *policy_service   = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
+		const char *policy_service = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
 		const char *policy_namespace = getenv("PKCS11_PROXY_TLS_POLICY_NAMESPACE");
-		const char *policy_keyset    = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
+		const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
 
-		if (policy_service && policy_service[0] &&
-		    policy_namespace && policy_namespace[0] &&
-		    policy_keyset && policy_keyset[0]) {
+		if (policy_service && policy_service[0] && policy_namespace && policy_namespace[0]
+		    && policy_keyset && policy_keyset[0]) {
 			X509 *peer = SSL_get0_peer_certificate(ssl);
 			char *json;
 			int json_len;
@@ -506,14 +513,11 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 				return 0;
 			}
 
-			pr = policy_validate_server(json, json_len,
-						    policy_service,
-						    policy_namespace,
-						    policy_keyset);
+			pr = policy_validate_server(json, json_len, policy_service,
+			                            policy_namespace, policy_keyset);
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected server: %s",
-					 policy_result_str(pr)));
+				warning(("OID policy rejected server: %s", policy_result_str(pr)));
 				free(json);
 				SSL_free(ssl);
 				return 0;
@@ -523,13 +527,20 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 			{
 				cJSON *root = cJSON_ParseWithLength(json, json_len);
 				if (root) {
-					const cJSON *service = cJSON_GetObjectItemCaseSensitive(root, "service");
-					const cJSON *ns = cJSON_GetObjectItemCaseSensitive(root, "namespace");
-					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log("OID policy OK: service=%s namespace=%s keyset=%s",
-						    service && cJSON_IsString(service) ? service->valuestring : "?",
-						    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
-						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					const cJSON *service
+					    = cJSON_GetObjectItemCaseSensitive(root, "service");
+					const cJSON *ns
+					    = cJSON_GetObjectItemCaseSensitive(root, "namespace");
+					const cJSON *keyset
+					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log(
+					    "OID policy OK: service=%s namespace=%s keyset=%s",
+					    service && cJSON_IsString(service)
+					        ? service->valuestring
+					        : "?",
+					    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
+					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
+					                                     : "?");
 					cJSON_Delete(root);
 				}
 			}
@@ -599,8 +610,8 @@ gck_rpc_tls_read_all_conn(SSL *ssl, void *data, unsigned int len)
 
 	if (bytes <= 0) {
 		ssl_err = SSL_get_error(ssl, bytes);
-		debug(("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)",
-			    bytes, ssl_err, len));
+		debug(("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)", bytes,
+		       ssl_err, len));
 		while ((error = ERR_get_error())) {
 			ERR_error_string_n(error, buf, sizeof(buf));
 			debug(("SSL_read error: %s", buf));

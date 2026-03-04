@@ -18,8 +18,7 @@
  * Only included under #ifdef DEBUG_SECCOMP — never in production builds.
  */
 #undef KILL_PROCESS
-#define KILL_PROCESS \
-		BPF_STMT(BPF_RET+BPF_K, SECCOMP_RET_TRAP)
+#define KILL_PROCESS BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_TRAP)
 
 extern int install_syscall_reporter(void);
 
