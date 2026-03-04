@@ -73,13 +73,28 @@ int gck_rpc_init_tls(GckRpcTlsState *state, enum gck_rpc_tls_caller caller);
  */
 int gck_rpc_start_tls(GckRpcTlsState *state, int sock);
 
+/* Per-connection TLS: create SSL/BIO from shared ssl_ctx.
+ * Returns 1 on success, 0 on failure. Outputs via out_ssl/out_bio.
+ */
+int gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
+			   SSL **out_ssl, BIO **out_bio);
+
 /* Send data over TLS. Returns bytes written, or 0 on error. */
 int gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len);
+
+/* Per-connection write: uses explicit SSL*. */
+int gck_rpc_tls_write_all_conn(SSL *ssl, void *data, unsigned int len);
 
 /* Read data over TLS. Returns bytes read, or 0 on error. */
 int gck_rpc_tls_read_all(GckRpcTlsState *state, void *data, unsigned int len);
 
-/* Clean up TLS state. */
+/* Per-connection read: uses explicit SSL*. */
+int gck_rpc_tls_read_all_conn(SSL *ssl, void *data, unsigned int len);
+
+/* Clean up TLS state (context + connection). */
 void gck_rpc_close_tls(GckRpcTlsState *state);
+
+/* Clean up per-connection SSL only (does not free ssl_ctx). */
+void gck_rpc_close_tls_conn(SSL *ssl);
 
 #endif /* GCKRPC_TLS_H_ */

@@ -91,6 +91,8 @@ typedef struct _CallState {
 	 */
 	SessionState sessions[PKCS11PROXY_MAX_SESSION_COUNT];
 	GckRpcTlsState *tls;
+	SSL *conn_ssl;
+	BIO *conn_bio;
 } CallState;
 
 typedef struct _DispatchState {
@@ -2172,8 +2174,8 @@ static int read_all(CallState *cs, void *data, size_t len)
 
 	while (len > 0) {
 
-		if (cs->tls)
-			r = gck_rpc_tls_read_all(cs->tls, data, len);
+		if (cs->conn_ssl)
+			r = gck_rpc_tls_read_all_conn(cs->conn_ssl, data, len);
 		else
 			r = recv(cs->sock, data, len, 0);
 
@@ -2205,8 +2207,8 @@ static int write_all(CallState *cs, void *data, size_t len)
 
 	while (len > 0) {
 
-		if (cs->tls)
-			r = gck_rpc_tls_write_all(cs->tls, (void *) data, len);
+		if (cs->conn_ssl)
+			r = gck_rpc_tls_write_all_conn(cs->conn_ssl, (void *) data, len);
 		else
             r = send(cs->sock, data, len, MSG_NOSIGNAL);
 
@@ -2245,9 +2247,10 @@ static void run_dispatch_loop(CallState *cs)
 		hoststr[0] = portstr[0] = '\0';
 	}
 
-	/* Enable TLS for this socket */
+	/* Enable TLS for this socket (per-connection SSL) */
 	if (cs->tls) {
-		if (! gck_rpc_start_tls(cs->tls, cs->sock)) {
+		if (! gck_rpc_start_tls_conn(cs->tls, cs->sock,
+					     &cs->conn_ssl, &cs->conn_bio)) {
 			gck_rpc_warn("Can't enable TLS");
 			return ;
 		}
@@ -2327,6 +2330,14 @@ static void run_dispatch_loop(CallState *cs)
 
 	gck_rpc_log("dispatch-loop: end (sock=%d, client %s:%s) — cleaning up sessions",
 		    cs->sock, hoststr, portstr);
+
+	/* Clean up per-connection TLS before sessions */
+	if (cs->conn_ssl) {
+		gck_rpc_close_tls_conn(cs->conn_ssl);
+		cs->conn_ssl = NULL;
+		cs->conn_bio = NULL;
+	}
+
 	call_uninit(cs);
 }
 

@@ -888,6 +888,147 @@ test_oid_policy_daemon() {
 }
 
 # ═══════════════════════════════════════════
+# CONCURRENT CONNECTIONS (T70-T73)
+# Regression tests for the shared-TLS-state
+# race condition: a health probe (plain TCP
+# connect + immediate close) must not kill an
+# active PKCS#11 session.
+# ═══════════════════════════════════════════
+
+# Send a "health probe" — TCP connect + immediate close.
+# Usage: send_health_probe <host> <port>
+send_health_probe() {
+    local host="$1"
+    local port="$2"
+    # Use bash /dev/tcp — connect and immediately close
+    (echo > "/dev/tcp/${host}/${port}") 2>/dev/null || true
+}
+
+test_concurrent_connections() {
+    log_header "Concurrent Connections (health-probe race)"
+
+    # T70: PKCS#11 crypto survives a single health probe mid-session
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T70" "daemon failed to start"
+    else
+        # Fire a health probe before the PKCS#11 client connects
+        send_health_probe 127.0.0.1 "${DAEMON_PORT}"
+        sleep 0.2
+
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T70: PKCS#11 crypto after health probe"
+        else
+            fail "T70: PKCS#11 crypto after health probe" "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
+
+    # T71: Burst of health probes followed by PKCS#11 operation
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T71" "daemon failed to start"
+    else
+        for _ in 1 2 3 4 5; do
+            send_health_probe 127.0.0.1 "${DAEMON_PORT}"
+        done
+        sleep 0.3
+
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T71: PKCS#11 crypto after 5 health probes"
+        else
+            fail "T71: PKCS#11 crypto after 5 health probes" "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
+
+    # T72: Health probes DURING an active PKCS#11 session
+    # This is the exact race condition that caused CKR_SESSION_HANDLE_INVALID
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T72" "daemon failed to start"
+    else
+        # Start the PKCS#11 client in background
+        local pkcs11_output_file
+        pkcs11_output_file=$(mktemp)
+
+        (
+            PKCS11_PROXY_SOCKET="tls://127.0.0.1:${DAEMON_PORT}" \
+            PKCS11_PROXY_TLS_CERT="${PKI_DIR}/client-valid.crt" \
+            PKCS11_PROXY_TLS_KEY="${PKI_DIR}/client-valid.key" \
+            PKCS11_PROXY_TLS_CA="${PKI_DIR}/root-ca.crt" \
+            PKCS11_PROXY_TLS_SERVER_NAME="localhost" \
+            timeout 10 "${TEST_PKCS11_TOOL}" "${PKCS11_PROXY_LIB}" > "${pkcs11_output_file}" 2>/dev/null
+        ) &
+        local client_pid=$!
+
+        # Wait a moment for the TLS handshake to establish, then fire probes
+        sleep 0.3
+        for _ in 1 2 3 4 5; do
+            send_health_probe 127.0.0.1 "${DAEMON_PORT}"
+            sleep 0.05
+        done
+
+        # Wait for the PKCS#11 client to finish
+        wait "${client_pid}"
+        local rc=$?
+        local output
+        output=$(cat "${pkcs11_output_file}")
+        rm -f "${pkcs11_output_file}"
+
+        if [ "${rc}" -eq 0 ] && echo "${output}" | grep -q "CRYPTO=pass"; then
+            pass "T72: PKCS#11 crypto survives concurrent health probes"
+        else
+            fail "T72: PKCS#11 crypto survives concurrent health probes" "exit=${rc} output=${output}"
+        fi
+    fi
+    stop_daemon
+
+    # T73: Multiple sequential PKCS#11 sessions interleaved with health probes
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T73" "daemon failed to start"
+    else
+        local all_ok=1
+        for i in 1 2 3; do
+            # Health probe before each connection
+            send_health_probe 127.0.0.1 "${DAEMON_PORT}"
+            sleep 0.1
+
+            run_pkcs11_tool \
+                "${PKI_DIR}/root-ca.crt" \
+                "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+            if [ $? -ne 0 ] || ! echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+                all_ok=0
+                break
+            fi
+        done
+        if [ "${all_ok}" -eq 1 ]; then
+            pass "T73: 3 sequential sessions with interleaved health probes"
+        else
+            fail "T73: 3 sequential sessions with interleaved health probes" "failed on iteration ${i}"
+        fi
+    fi
+    stop_daemon
+}
+
+# ═══════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════
 
@@ -915,6 +1056,7 @@ test_hostname
 test_data_integrity
 test_seccomp
 test_oid_policy_daemon
+test_concurrent_connections
 
 # ─── Summary ───
 echo ""

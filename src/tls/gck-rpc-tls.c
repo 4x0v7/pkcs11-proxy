@@ -327,6 +327,160 @@ gck_rpc_close_tls(GckRpcTlsState *state)
 	}
 }
 
+/* Clean up a per-connection SSL (does not free ssl_ctx). */
+void
+gck_rpc_close_tls_conn(SSL *ssl)
+{
+	if (ssl) {
+		SSL_shutdown(ssl);
+		SSL_free(ssl); /* also frees the BIO */
+	}
+}
+
+/* Per-connection TLS: create SSL/BIO from the shared ssl_ctx.
+ *
+ * Each accepted connection gets its own SSL/BIO pair so that concurrent
+ * connections (including health-probe connections) don't clobber each other.
+ *
+ * Returns 1 on success, 0 on failure.  Outputs via out_ssl / out_bio.
+ */
+int
+gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
+		       SSL **out_ssl, BIO **out_bio)
+{
+	SSL *ssl;
+	BIO *bio;
+	int res;
+	char buf[256];
+	const char *server_name;
+
+	assert(ctx && ctx->ssl_ctx);
+
+	ssl = SSL_new(ctx->ssl_ctx);
+	if (!ssl) {
+		warning(("can't initialize SSL"));
+		return 0;
+	}
+
+	bio = BIO_new_socket(sock, BIO_NOCLOSE);
+	if (!bio) {
+		warning(("can't initialize SSL BIO"));
+		SSL_free(ssl);
+		return 0;
+	}
+
+	SSL_set_bio(ssl, bio, bio);
+
+	if (ctx->type == GCK_RPC_TLS_CLIENT) {
+		server_name = getenv("PKCS11_PROXY_TLS_SERVER_NAME");
+		if (server_name && server_name[0]) {
+			SSL_set_tlsext_host_name(ssl, server_name);
+			SSL_set1_host(ssl, server_name);
+			debug(("Client: hostname verification for '%s'", server_name));
+		}
+		res = SSL_connect(ssl);
+	} else {
+		res = SSL_accept(ssl);
+	}
+
+	if (res != 1) {
+		ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+		warning(("can't start TLS : %i/%i (%s perhaps)",
+			 res, SSL_get_error(ssl, res), strerror(errno)));
+		warning(("SSL ERR: %s", buf));
+		SSL_free(ssl); /* also frees bio */
+		return 0;
+	}
+
+	debug(("TLS handshake OK: %s %s",
+	       SSL_get_version(ssl), SSL_get_cipher_name(ssl)));
+
+	/* OID policy verification (optional — skipped when env vars are unset) */
+	if (ctx->type == GCK_RPC_TLS_SERVER) {
+		const char *policy_repo   = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
+		const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
+
+		if (policy_repo && policy_repo[0] &&
+		    policy_keyset && policy_keyset[0]) {
+			X509 *peer = SSL_get0_peer_certificate(ssl);
+			char *json;
+			int json_len;
+			PolicyResult pr;
+
+			if (!peer) {
+				warning(("OID policy: no client certificate"));
+				SSL_free(ssl);
+				return 0;
+			}
+
+			json = policy_extract_json(peer, &json_len);
+			if (!json) {
+				warning(("OID policy: no policy extension in client cert"));
+				SSL_free(ssl);
+				return 0;
+			}
+
+			pr = policy_validate_client(json, json_len,
+						    policy_repo, policy_keyset);
+			free(json);
+
+			if (pr != POLICY_OK) {
+				warning(("OID policy rejected client: %s",
+					 policy_result_str(pr)));
+				SSL_free(ssl);
+				return 0;
+			}
+
+			debug(("OID policy: client accepted"));
+		}
+	} else {
+		const char *policy_service   = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
+		const char *policy_namespace = getenv("PKCS11_PROXY_TLS_POLICY_NAMESPACE");
+		const char *policy_keyset    = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
+
+		if (policy_service && policy_service[0] &&
+		    policy_namespace && policy_namespace[0] &&
+		    policy_keyset && policy_keyset[0]) {
+			X509 *peer = SSL_get0_peer_certificate(ssl);
+			char *json;
+			int json_len;
+			PolicyResult pr;
+
+			if (!peer) {
+				warning(("OID policy: no server certificate"));
+				SSL_free(ssl);
+				return 0;
+			}
+
+			json = policy_extract_json(peer, &json_len);
+			if (!json) {
+				warning(("OID policy: no policy extension in server cert"));
+				SSL_free(ssl);
+				return 0;
+			}
+
+			pr = policy_validate_server(json, json_len,
+						    policy_service,
+						    policy_namespace,
+						    policy_keyset);
+			free(json);
+
+			if (pr != POLICY_OK) {
+				warning(("OID policy rejected server: %s",
+					 policy_result_str(pr)));
+				SSL_free(ssl);
+				return 0;
+			}
+
+			debug(("OID policy: server accepted"));
+		}
+	}
+
+	*out_ssl = ssl;
+	*out_bio = bio;
+	return 1;
+}
+
 /* Send data using SSL.
  *
  * Returns the number of bytes written.
@@ -334,14 +488,20 @@ gck_rpc_close_tls(GckRpcTlsState *state)
 int
 gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len)
 {
+	return gck_rpc_tls_write_all_conn(state->ssl, data, len);
+}
+
+int
+gck_rpc_tls_write_all_conn(SSL *ssl, void *data, unsigned int len)
+{
 	int bytes, error;
 	char buf[256];
 
-	assert(state);
+	assert(ssl);
 	assert(data);
 	assert(len > 0);
 
-	bytes = SSL_write(state->ssl, data, len);
+	bytes = SSL_write(ssl, data, len);
 
 	if (bytes <= 0) {
 		while ((error = ERR_get_error())) {
@@ -361,17 +521,23 @@ gck_rpc_tls_write_all(GckRpcTlsState *state, void *data, unsigned int len)
 int
 gck_rpc_tls_read_all(GckRpcTlsState *state, void *data, unsigned int len)
 {
+	return gck_rpc_tls_read_all_conn(state->ssl, data, len);
+}
+
+int
+gck_rpc_tls_read_all_conn(SSL *ssl, void *data, unsigned int len)
+{
 	int bytes, error, ssl_err;
 	char buf[256];
 
-	assert(state);
+	assert(ssl);
 	assert(data);
 	assert(len > 0);
 
-	bytes = SSL_read(state->ssl, data, len);
+	bytes = SSL_read(ssl, data, len);
 
 	if (bytes <= 0) {
-		ssl_err = SSL_get_error(state->ssl, bytes);
+		ssl_err = SSL_get_error(ssl, bytes);
 		gck_rpc_log("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)",
 			    bytes, ssl_err, len);
 		while ((error = ERR_get_error())) {
