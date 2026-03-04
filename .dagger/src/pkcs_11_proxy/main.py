@@ -10,6 +10,7 @@ SrcDir = Annotated[dagger.Directory, Ignore(["build"])]
 
 TRIVY_IMAGE = "aquasec/trivy:latest"
 LINT_IMAGE = "ubuntu:24.04"
+LLVM_VERSION = "20"
 
 # C source directories to lint (relative to repo root)
 C_SRC_DIRS = ["src/", "include/"]
@@ -138,6 +139,7 @@ class Pkcs11Proxy:
 
     def _lint_container(self, src: dagger.Directory) -> dagger.Container:
         """Ubuntu container with clang-format, clang-tidy, cppcheck, and build deps."""
+        v = LLVM_VERSION
         return (
             dagger.dag.container()
             .from_(LINT_IMAGE)
@@ -147,9 +149,20 @@ class Pkcs11Proxy:
                     "-c",
                     "apt-get update -qq && "
                     "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
-                    "clang-format clang-tidy cppcheck "
-                    "cmake build-essential pkg-config libssl-dev libseccomp-dev "
-                    "> /dev/null 2>&1",
+                    "wget gnupg software-properties-common "
+                    "cppcheck cmake build-essential pkg-config "
+                    "libssl-dev libseccomp-dev > /dev/null 2>&1 && "
+                    "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key "
+                    "| gpg --dearmor -o /usr/share/keyrings/llvm.gpg && "
+                    'echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] '
+                    "https://apt.llvm.org/noble/ "
+                    f'llvm-toolchain-noble-{v} main" '
+                    "> /etc/apt/sources.list.d/llvm.list && "
+                    "apt-get update -qq && "
+                    "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
+                    f"clang-format-{v} clang-tidy-{v} > /dev/null 2>&1 && "
+                    f"ln -sf /usr/bin/clang-format-{v} /usr/bin/clang-format && "
+                    f"ln -sf /usr/bin/clang-tidy-{v} /usr/bin/clang-tidy",
                 ]
             )
             .with_directory("/src", src)
