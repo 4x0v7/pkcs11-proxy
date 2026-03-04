@@ -51,7 +51,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
-#include <syslog.h>
 
 #ifdef SECCOMP
 #include <seccomp.h>
@@ -134,12 +133,8 @@ void gck_rpc_log(const char *msg, ...)
 	va_list ap;
 
 	va_start(ap, msg);
-#if DEBUG_OUTPUT
 	vfprintf(stderr, msg, ap);
 	fprintf(stderr, "\n");
-#else
-        vsyslog(LOG_INFO,msg,ap);        
-#endif
 	va_end(ap);
 }
 
@@ -920,7 +915,7 @@ static CK_RV rpc_C_Finalize(CallState * cs)
 	/* Close all sessions that have been opened by this thread, regardless of slot */
 	for (i = 0; i < PKCS11PROXY_MAX_SESSION_COUNT; i++) {
 		if (cs->sessions[i].id) {
-			gck_rpc_log("Closing session %li on position %i", cs->sessions[i].id, i);
+			debug(("Closing session %li on position %i", cs->sessions[i].id, i));
 
 			ret = (pkcs11_module->C_CloseSession) (cs->sessions[i].id);
 			if (ret != CKR_OK)
@@ -942,8 +937,8 @@ static CK_RV rpc_C_Finalize(CallState * cs)
 			continue ;
 		if (c->req &&
 		    (c->req->call_id == GCK_RPC_CALL_C_WaitForSlotEvent)) {
-			gck_rpc_log("Sending interuption signal to %i\n",
-                                    c->sock);
+			debug(("Sending interruption signal to %i",
+                                    c->sock));
 			if (c->sock != -1)
 				if (shutdown(c->sock, SHUT_RDWR) == 0)
 					c->sock = -1;
@@ -1091,7 +1086,7 @@ static CK_RV rpc_C_OpenSession(CallState * cs)
 			if (! cs->sessions[i].id) {
 				cs->sessions[i].id = session;
 				cs->sessions[i].slot = slot_id;
-				gck_rpc_log("Session %li stored in position %i", session, i);
+				debug(("Session %li stored in position %i", session, i));
 				break;
 			}
 		}
@@ -1115,14 +1110,14 @@ static CK_RV rpc_C_CloseSession(CallState * cs)
 		/* Remove this session from this threads list */
 		for (i = 0; i < PKCS11PROXY_MAX_SESSION_COUNT; i++) {
 			if (cs->sessions[i].id == session) {
-				gck_rpc_log("Session %li removed from position %i", session, i);
+				debug(("Session %li removed from position %i", session, i));
 				cs->sessions[i].id = 0;
 				break;
 			}
 		}
 		if (i == PKCS11PROXY_MAX_SESSION_COUNT) {
 			/* Ignore errors, like with close() */
-			gck_rpc_log("C_CloseSession on unknown session");
+			debug(("C_CloseSession on unknown session"));
 		}
 	}
 	END_CALL;
@@ -1153,7 +1148,7 @@ static CK_RV rpc_C_CloseAllSessions(CallState * cs)
 
 	for (i = 0; i < PKCS11PROXY_MAX_SESSION_COUNT; i++) {
 		if (cs->sessions[i].id && (cs->sessions[i].slot == slot_id)) {
-			gck_rpc_log("Closing session %li on position %i with slot %i", cs->sessions[i].id, i, slot_id);
+			debug(("Closing session %li on position %i with slot %i", cs->sessions[i].id, i, slot_id));
 
 			_ret = (pkcs11_module->C_CloseSession) (cs->sessions[i].id);
 			if (_ret == CKR_OK ||
@@ -2024,8 +2019,8 @@ static int dispatch_call(CallState * cs)
 	assert(req->call_id > GCK_RPC_CALL_ERROR);
 	assert(req->call_id < GCK_RPC_CALL_MAX);
 
-	gck_rpc_log("dispatch: >>> %s (call_id=%d, sock=%d)",
-		    gck_rpc_calls[req->call_id].name, req->call_id, cs->sock);
+	debug(("dispatch: >>> %s (call_id=%d, sock=%d)",
+		    gck_rpc_calls[req->call_id].name, req->call_id, cs->sock));
 
 	/* Prepare a response for the function to fill in */
 	if (!gck_rpc_message_prep(resp, req->call_id, GCK_RPC_RESPONSE)) {
@@ -2130,9 +2125,9 @@ static int dispatch_call(CallState * cs)
 		}
 	}
 
-	gck_rpc_log("dispatch: <<< %s => 0x%lX (%s)",
+	debug(("dispatch: <<< %s => 0x%lX (%s)",
 		    gck_rpc_calls[req->call_id].name, (unsigned long)ret,
-		    ret == CKR_OK ? "OK" : "ERROR");
+		    ret == CKR_OK ? "OK" : "ERROR"));
 
 	/* A filled in response */
 	if (ret == CKR_OK) {
@@ -2180,8 +2175,8 @@ static int read_all(CallState *cs, void *data, size_t len)
 			r = recv(cs->sock, data, len, 0);
 
 		if (r == 0) {
-			gck_rpc_log("read_all: EOF from client (sock=%d, remaining=%zu)",
-				    cs->sock, len);
+			debug(("read_all: EOF from client (sock=%d, remaining=%zu)",
+				    cs->sock, len));
 			return 0;
 		} else if (r == -1) {
 			if (errno != EAGAIN && errno != EINTR) {
@@ -2214,12 +2209,12 @@ static int write_all(CallState *cs, void *data, size_t len)
 
 		if (r == -1) {
 			if (errno == EPIPE) {
-				gck_rpc_log("write_all: EPIPE from client (sock=%d, remaining=%zu)",
-					    cs->sock, len);
+				debug(("write_all: EPIPE from client (sock=%d, remaining=%zu)",
+				    cs->sock, len));
 				return 0;
 			} else if (errno != EAGAIN && errno != EINTR) {
-				gck_rpc_warn("write_all: error (sock=%d, remaining=%zu): %s",
-					     cs->sock, len, strerror(errno));
+				debug(("write_all: error (sock=%d, remaining=%zu): %s",
+					     cs->sock, len, strerror(errno)));
 				return 0;
 			}
 		} else {
@@ -2251,14 +2246,14 @@ static void run_dispatch_loop(CallState *cs)
 	if (cs->tls) {
 		if (! gck_rpc_start_tls_conn(cs->tls, cs->sock,
 					     &cs->conn_ssl, &cs->conn_bio)) {
-			gck_rpc_warn("Can't enable TLS");
+			debug(("Can't enable TLS (health probe?)"));
 			return ;
 		}
 	}
 
 	/* The client application */
 	if (! cs->read(cs, (void *)&cs->appid, sizeof (cs->appid))) {
-		gck_rpc_warn("Can't read appid\n");
+		debug(("Can't read appid (health probe?)"));
 		return ;
 	}
 
@@ -2272,8 +2267,8 @@ static void run_dispatch_loop(CallState *cs)
 	}
 
 	/* The main thread loop */
-	gck_rpc_log("dispatch-loop: start (sock=%d, client %s:%s)",
-		    cs->sock, hoststr, portstr);
+	debug(("dispatch-loop: start (sock=%d, client %s:%s)",
+		    cs->sock, hoststr, portstr));
 
 	while (TRUE) {
 
@@ -2281,7 +2276,7 @@ static void run_dispatch_loop(CallState *cs)
 
 		/* Read the number of bytes ... */
 		if (! cs->read(cs, buf, 4)) {
-			gck_rpc_log("dispatch-loop: client disconnected (read header failed, sock=%d)", cs->sock);
+			debug(("dispatch-loop: client disconnected (read header failed, sock=%d)", cs->sock));
 			break;
 		}
 
@@ -2302,7 +2297,7 @@ static void run_dispatch_loop(CallState *cs)
 
 		/* ... and read/parse in the actual message */
 		if (!cs->read(cs, cs->req->buffer.buf, len)) {
-			gck_rpc_log("dispatch-loop: client disconnected (read body failed, sock=%d, expected %u bytes)", cs->sock, len);
+			debug(("dispatch-loop: client disconnected (read body failed, sock=%d, expected %u bytes)", cs->sock, len));
 			break;
 		}
 
@@ -2323,7 +2318,7 @@ static void run_dispatch_loop(CallState *cs)
 		egg_buffer_encode_uint32(buf, cs->resp->buffer.len);
 		if (!cs->write(cs, buf, 4) ||
 		    !cs->write(cs, cs->resp->buffer.buf, cs->resp->buffer.len)) {
-			gck_rpc_log("dispatch-loop: write response failed (sock=%d)", cs->sock);
+			debug(("dispatch-loop: write response failed (sock=%d)", cs->sock));
 			break;
 		}
 	}

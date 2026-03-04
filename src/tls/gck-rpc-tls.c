@@ -30,6 +30,7 @@
 #include "gck-rpc-private.h"
 #include "gck-rpc-tls.h"
 #include "gck-rpc-tls-policy.h"
+#include "ext/cjson/cJSON.h"
 
 #include <assert.h>
 
@@ -220,15 +221,14 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 	}
 
 	if (res != 1) {
+		int ssl_err = SSL_get_error(state->ssl, res);
 		ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-		warning(("can't start TLS : %i/%i (%s perhaps)",
-			 res, SSL_get_error(state->ssl, res), strerror(errno)));
-		warning(("SSL ERR: %s", buf));
+		debug(("TLS handshake failed: %i/%i (%s)", res, ssl_err, buf));
 		return 0;
 	}
 
-	debug(("TLS handshake OK: %s %s",
-	       SSL_get_version(state->ssl), SSL_get_cipher_name(state->ssl)));
+	gck_rpc_log("TLS handshake OK: %s %s",
+		    SSL_get_version(state->ssl), SSL_get_cipher_name(state->ssl));
 
 	/* OID policy verification (optional — skipped when env vars are unset) */
 	if (state->type == GCK_RPC_TLS_SERVER) {
@@ -255,15 +255,31 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 
 			pr = policy_validate_client(json, json_len,
 						    policy_repo, policy_keyset);
-			free(json);
 
 			if (pr != POLICY_OK) {
 				warning(("OID policy rejected client: %s",
 					 policy_result_str(pr)));
+				free(json);
 				return 0;
 			}
 
-			debug(("OID policy: client accepted"));
+			/* Log the validated client identity */
+			{
+				cJSON *root = cJSON_ParseWithLength(json, json_len);
+				if (root) {
+					const cJSON *repo = cJSON_GetObjectItemCaseSensitive(root, "repo");
+					const cJSON *workflow = cJSON_GetObjectItemCaseSensitive(root, "workflow");
+					const cJSON *ref = cJSON_GetObjectItemCaseSensitive(root, "ref");
+					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log("OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
+						    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
+						    workflow && cJSON_IsString(workflow) ? workflow->valuestring : "?",
+						    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
+						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					cJSON_Delete(root);
+				}
+			}
+			free(json);
 		}
 	} else {
 		/* Client-side: validate server cert OID policy */
@@ -294,15 +310,29 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 						    policy_service,
 						    policy_namespace,
 						    policy_keyset);
-			free(json);
 
 			if (pr != POLICY_OK) {
 				warning(("OID policy rejected server: %s",
 					 policy_result_str(pr)));
+				free(json);
 				return 0;
 			}
 
-			debug(("OID policy: server accepted"));
+			/* Log the validated server identity */
+			{
+				cJSON *root = cJSON_ParseWithLength(json, json_len);
+				if (root) {
+					const cJSON *service = cJSON_GetObjectItemCaseSensitive(root, "service");
+					const cJSON *ns = cJSON_GetObjectItemCaseSensitive(root, "namespace");
+					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log("OID policy OK: service=%s namespace=%s keyset=%s",
+						    service && cJSON_IsString(service) ? service->valuestring : "?",
+						    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
+						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					cJSON_Delete(root);
+				}
+			}
+			free(json);
 		}
 	}
 
@@ -384,16 +414,17 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 	}
 
 	if (res != 1) {
+		int ssl_err = SSL_get_error(ssl, res);
 		ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-		warning(("can't start TLS : %i/%i (%s perhaps)",
-			 res, SSL_get_error(ssl, res), strerror(errno)));
-		warning(("SSL ERR: %s", buf));
+		/* Health probes cause SSL_ERROR_SYSCALL / SSL_ERROR_ZERO_RETURN —
+		 * downgrade to debug to avoid log noise. */
+		debug(("TLS handshake failed: %i/%i (%s)", res, ssl_err, buf));
 		SSL_free(ssl); /* also frees bio */
 		return 0;
 	}
 
-	debug(("TLS handshake OK: %s %s",
-	       SSL_get_version(ssl), SSL_get_cipher_name(ssl)));
+	gck_rpc_log("TLS handshake OK: %s %s",
+		    SSL_get_version(ssl), SSL_get_cipher_name(ssl));
 
 	/* OID policy verification (optional — skipped when env vars are unset) */
 	if (ctx->type == GCK_RPC_TLS_SERVER) {
@@ -422,16 +453,32 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 
 			pr = policy_validate_client(json, json_len,
 						    policy_repo, policy_keyset);
-			free(json);
 
 			if (pr != POLICY_OK) {
 				warning(("OID policy rejected client: %s",
 					 policy_result_str(pr)));
+				free(json);
 				SSL_free(ssl);
 				return 0;
 			}
 
-			debug(("OID policy: client accepted"));
+			/* Log the validated client identity */
+			{
+				cJSON *root = cJSON_ParseWithLength(json, json_len);
+				if (root) {
+					const cJSON *repo = cJSON_GetObjectItemCaseSensitive(root, "repo");
+					const cJSON *workflow = cJSON_GetObjectItemCaseSensitive(root, "workflow");
+					const cJSON *ref = cJSON_GetObjectItemCaseSensitive(root, "ref");
+					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log("OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
+						    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
+						    workflow && cJSON_IsString(workflow) ? workflow->valuestring : "?",
+						    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
+						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					cJSON_Delete(root);
+				}
+			}
+			free(json);
 		}
 	} else {
 		const char *policy_service   = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
@@ -463,16 +510,30 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock,
 						    policy_service,
 						    policy_namespace,
 						    policy_keyset);
-			free(json);
 
 			if (pr != POLICY_OK) {
 				warning(("OID policy rejected server: %s",
 					 policy_result_str(pr)));
+				free(json);
 				SSL_free(ssl);
 				return 0;
 			}
 
-			debug(("OID policy: server accepted"));
+			/* Log the validated server identity */
+			{
+				cJSON *root = cJSON_ParseWithLength(json, json_len);
+				if (root) {
+					const cJSON *service = cJSON_GetObjectItemCaseSensitive(root, "service");
+					const cJSON *ns = cJSON_GetObjectItemCaseSensitive(root, "namespace");
+					const cJSON *keyset = cJSON_GetObjectItemCaseSensitive(root, "keyset");
+					gck_rpc_log("OID policy OK: service=%s namespace=%s keyset=%s",
+						    service && cJSON_IsString(service) ? service->valuestring : "?",
+						    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
+						    keyset && cJSON_IsString(keyset) ? keyset->valuestring : "?");
+					cJSON_Delete(root);
+				}
+			}
+			free(json);
 		}
 	}
 
@@ -506,7 +567,7 @@ gck_rpc_tls_write_all_conn(SSL *ssl, void *data, unsigned int len)
 	if (bytes <= 0) {
 		while ((error = ERR_get_error())) {
 			ERR_error_string_n(error, buf, sizeof(buf));
-			warning(("SSL_write error: %s", buf));
+			debug(("SSL_write error: %s", buf));
 		}
 		return 0;
 	}
@@ -538,11 +599,11 @@ gck_rpc_tls_read_all_conn(SSL *ssl, void *data, unsigned int len)
 
 	if (bytes <= 0) {
 		ssl_err = SSL_get_error(ssl, bytes);
-		gck_rpc_log("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)",
-			    bytes, ssl_err, len);
+		debug(("tls_read: SSL_read returned %d, SSL_get_error=%d (wanted %u bytes)",
+			    bytes, ssl_err, len));
 		while ((error = ERR_get_error())) {
 			ERR_error_string_n(error, buf, sizeof(buf));
-			warning(("SSL_read error: %s", buf));
+			debug(("SSL_read error: %s", buf));
 		}
 		return 0;
 	}
