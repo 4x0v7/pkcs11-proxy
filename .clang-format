@@ -1,0 +1,46 @@
+# pkcs11-proxy clang-format configuration
+# Matches the existing GNOME/GNU-ish style: tabs, 8-wide, K&R braces.
+# Run: clang-format -i src/**/*.c include/**/*.h
+
+Language: Cpp
+BasedOnStyle: GNU
+
+# Indentation
+IndentWidth: 8
+TabWidth: 8
+UseTab: ForIndentation
+ContinuationIndentWidth: 4
+
+# Braces
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Line length
+ColumnLimit: 100
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: Consecutive
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+
+# Includes
+SortIncludes: CaseInsensitive
+IncludeBlocks: Preserve
+
+# Pointer alignment — match existing: int *foo
+PointerAlignment: Right
+
+# Don't reflow comments (preserve manual formatting)
+ReflowComments: false
+
+# Keep case labels at same level as switch
+IndentCaseLabels: false

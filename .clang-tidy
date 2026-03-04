@@ -1,0 +1,33 @@
+# pkcs11-proxy clang-tidy configuration
+# Run: clang-tidy -p build src/**/*.c
+# Requires compile_commands.json (cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
+
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  readability-braces-around-statements,
+  readability-misleading-indentation,
+  readability-redundant-declaration,
+  readability-inconsistent-declaration-parameter-name,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -misc-no-recursion,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-double-free,
+  clang-analyzer-core.NullDereference,
+  clang-analyzer-unix.Malloc
+
+HeaderFilterRegex: '(include|src)/.*\.h$'
+
+CheckOptions:
+  - key: readability-braces-around-statements.ShortStatementLines
+    value: '0'

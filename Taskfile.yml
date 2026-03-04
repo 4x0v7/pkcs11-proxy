@@ -5,9 +5,67 @@ version: '3'
 vars:
   TEST_IMAGE: pkcs11-proxy-test
   PROD_IMAGE: pkcs11-proxy
+  PREREQ_BUILD: |-
+    docker
+    cmake
+    gcc
+    pkg-config
+  PREREQ_LINT_C: |-
+    clang-format
+    clang-tidy
+    cppcheck
+  PREREQ_LINT_PY: |-
+    ruff
+    ty
+  PREREQ_CI: |-
+    dagger
+    task
 
 tasks:
-  default: task -a
+  default:
+    desc: Show available tasks
+    cmd: task -a
+
+  reqs:
+    desc: List required development tools and their install status
+    silent: true
+    cmds:
+      - echo "── Build ──"
+      - for:
+          var: PREREQ_BUILD
+          split: "\n"
+        cmd: |
+          {{if eq OS "windows"}}where {{.ITEM}} >nul 2>&1 && echo ✓ {{.ITEM}} || echo ✗ {{.ITEM}} — NOT FOUND{{else}}command -v {{.ITEM}} >/dev/null 2>&1 && echo "✓ {{.ITEM}}" || echo "✗ {{.ITEM}} — NOT FOUND"{{end}}
+      - echo ""
+      - echo "── C Linting ──"
+      - for:
+          var: PREREQ_LINT_C
+          split: "\n"
+        cmd: |
+          {{if eq OS "windows"}}where {{.ITEM}} >nul 2>&1 && echo ✓ {{.ITEM}} || echo ✗ {{.ITEM}} — NOT FOUND{{else}}command -v {{.ITEM}} >/dev/null 2>&1 && echo "✓ {{.ITEM}}" || echo "✗ {{.ITEM}} — NOT FOUND"{{end}}
+      - echo ""
+      - echo "── Python Linting ──"
+      - for:
+          var: PREREQ_LINT_PY
+          split: "\n"
+        cmd: |
+          {{if eq OS "windows"}}where {{.ITEM}} >nul 2>&1 && echo ✓ {{.ITEM}} || echo ✗ {{.ITEM}} — NOT FOUND{{else}}command -v {{.ITEM}} >/dev/null 2>&1 && echo "✓ {{.ITEM}}" || echo "✗ {{.ITEM}} — NOT FOUND"{{end}}
+      - echo ""
+      - echo "── CI ──"
+      - for:
+          var: PREREQ_CI
+          split: "\n"
+        cmd: |
+          {{if eq OS "windows"}}where {{.ITEM}} >nul 2>&1 && echo ✓ {{.ITEM}} || echo ✗ {{.ITEM}} — NOT FOUND{{else}}command -v {{.ITEM}} >/dev/null 2>&1 && echo "✓ {{.ITEM}}" || echo "✗ {{.ITEM}} — NOT FOUND"{{end}}
+
+  # ── Build ──────────────────────────────────────────────────
+
+  build:
+    desc: Build production server image
+    cmds:
+      - docker build -f docker/Dockerfile.server -t {{.PROD_IMAGE}} .
+
+  # ── Testing ────────────────────────────────────────────────
 
   test:
     desc: Build test image and run all tests
@@ -36,6 +94,110 @@ tasks:
       - task: test:build
       - bash docker/integration/run.sh
 
+  # ── C Linting ──────────────────────────────────────────────
+
+  lint:c:
+    desc: Run all C linters (format check + cppcheck + clang-tidy)
+    cmds:
+      - task: lint:c:fmt:check
+      - task: lint:c:cppcheck
+      - task: lint:c:tidy
+
+  lint:c:fmt:
+    desc: Format C code with clang-format (in-place)
+    cmds:
+      - cmd: >-
+          bash -c "find src/ include/ \( -name '*.c' -o -name '*.h' \)
+          | grep -v ext/
+          | xargs clang-format -i"
+        platforms: [linux, darwin]
+      - cmd: >-
+          powershell -NoProfile -Command
+          "Get-ChildItem -Recurse -Include *.c,*.h src/,include/
+          | Where-Object { $_.FullName -notmatch 'ext[/\\]' }
+          | ForEach-Object { clang-format -i $_.FullName }"
+        platforms: [windows]
+
+  lint:c:fmt:check:
+    desc: Check C formatting (dry-run, fails on diff)
+    cmds:
+      - cmd: >-
+          bash -c "find src/ include/ \( -name '*.c' -o -name '*.h' \)
+          | grep -v ext/
+          | xargs clang-format --dry-run --Werror"
+        platforms: [linux, darwin]
+      - cmd: >-
+          powershell -NoProfile -Command
+          "Get-ChildItem -Recurse -Include *.c,*.h src/,include/
+          | Where-Object { $_.FullName -notmatch 'ext[/\\]' }
+          | ForEach-Object { clang-format --dry-run --Werror $_.FullName }"
+        platforms: [windows]
+
+  lint:c:cppcheck:
+    desc: Run cppcheck static analysis on C source
+    cmds:
+      - >-
+        cppcheck
+        --enable=warning,style,performance
+        --suppress=missingIncludeSystem
+        --suppress=unusedFunction
+        --error-exitcode=1
+        -Iinclude -I.
+        src/ include/
+
+  lint:c:tidy:
+    desc: Run clang-tidy on C source (needs compile_commands.json)
+    cmds:
+      - cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build .
+      - cmd: >-
+          bash -c "find src/ -name '*.c'
+          | grep -v ext/
+          | xargs clang-tidy -p build --config-file=.clang-tidy"
+        platforms: [linux, darwin]
+
+  # ── Python Linting (Dagger module) ─────────────────────────
+
+  lint:py:
+    desc: Run all Python linters (ruff fmt + ruff check + ty)
+    cmds:
+      - task: lint:py:fmt
+      - task: lint:py:check
+      - task: lint:py:ty
+
+  lint:py:fmt:
+    desc: Format Python code with ruff
+    cmds:
+      - ruff format .dagger/src/pkcs_11_proxy/
+
+  lint:py:check:
+    desc: Lint Python code with ruff
+    cmds:
+      - ruff check --fix .dagger/src/pkcs_11_proxy/
+
+  lint:py:ty:
+    desc: Type-check Python code with ty
+    dir: .dagger
+    cmds:
+      - ty check src/pkcs_11_proxy/
+
+  # ── All Linting ────────────────────────────────────────────
+
+  lint:
+    desc: Run all linters (C + Python)
+    cmds:
+      - task: lint:c
+      - task: lint:py
+
+  # ── Pre-commit Check ───────────────────────────────────────
+
+  check:
+    desc: Full pre-commit check (lint + test)
+    cmds:
+      - task: lint
+      - task: test
+
+  # ── Dagger CI ──────────────────────────────────────────────
+
   dagger:test:
     desc: Run unit tests via Dagger
     cmds:
@@ -46,6 +208,26 @@ tasks:
     cmds:
       - dagger call -m .dagger integration-test --src=.
 
+  dagger:lint:
+    desc: Run all C linters via Dagger (containerized)
+    cmds:
+      - dagger call -m .dagger lint --src=.
+
+  dagger:lint:fmt:
+    desc: Check C formatting via Dagger
+    cmds:
+      - dagger call -m .dagger lint-format --src=.
+
+  dagger:lint:cppcheck:
+    desc: Run cppcheck via Dagger
+    cmds:
+      - dagger call -m .dagger lint-cppcheck --src=.
+
+  dagger:lint:tidy:
+    desc: Run clang-tidy via Dagger
+    cmds:
+      - dagger call -m .dagger lint-tidy --src=.
+
   dagger:sslscan:
     desc: Run sslscan TLS audit via Dagger
     cmds:
@@ -55,31 +237,3 @@ tasks:
     desc: Run Trivy scan via Dagger
     cmds:
       - dagger call -m .dagger trivy-scan --src=.
-
-  lint:
-    desc: Run all linters (ruff fmt + ruff check + ty)
-    cmds:
-      - task: lint:fmt
-      - task: lint:check
-      - task: lint:ty
-
-  lint:fmt:
-    desc: Format Python code with ruff
-    cmds:
-      - ruff format .dagger/src/pkcs_11_proxy/
-
-  lint:check:
-    desc: Lint Python code with ruff
-    cmds:
-      - ruff check --fix .dagger/src/pkcs_11_proxy/
-
-  lint:ty:
-    desc: Type-check Python code with ty
-    dir: .dagger
-    cmds:
-      - ty check src/pkcs_11_proxy/
-
-  build:
-    desc: Build production server image
-    cmds:
-      - docker build -f docker/Dockerfile.server -t {{.PROD_IMAGE}} .

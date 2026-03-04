@@ -2,11 +2,16 @@ import dagger
 from dagger import function, object_type
 
 TRIVY_IMAGE = "aquasec/trivy:latest"
+LINT_IMAGE = "ubuntu:24.04"
+
+# C source directories to lint (relative to repo root)
+C_SRC_DIRS = ["src/", "include/"]
+C_SRC_GLOBS = ["src/**/*.c", "src/**/*.h", "include/**/*.h"]
 
 
 @object_type
 class Pkcs11Proxy:
-    """pkcs11-proxy CI pipeline — build, unit test, and integration test."""
+    """pkcs11-proxy CI pipeline — build, test, lint, and security scan."""
 
     def _build_test_image(self, src: dagger.Directory) -> dagger.Container:
         """Build the test image from docker/Dockerfile.test (layer-cached)."""
@@ -119,6 +124,143 @@ class Pkcs11Proxy:
                     "CRITICAL,HIGH",
                     "--exit-code",
                     "1",
+                ]
+            )
+            .stdout()
+        )
+
+    def _lint_container(self, src: dagger.Directory) -> dagger.Container:
+        """Ubuntu container with clang-format, clang-tidy, cppcheck, and build deps."""
+        return (
+            dagger.dag.container()
+            .from_(LINT_IMAGE)
+            .with_exec(
+                [
+                    "bash",
+                    "-c",
+                    "apt-get update -qq && "
+                    "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
+                    "clang-format clang-tidy cppcheck "
+                    "cmake build-essential pkg-config libssl-dev libseccomp-dev "
+                    "> /dev/null 2>&1",
+                ]
+            )
+            .with_directory("/src", src)
+            .with_workdir("/src")
+        )
+
+    @function
+    async def lint(self, src: dagger.Directory) -> str:
+        """Run all C linters: clang-format check, cppcheck, clang-tidy."""
+        ctr = self._lint_container(src)
+
+        # clang-format --dry-run --Werror
+        fmt_result = await ctr.with_exec(
+            [
+                "bash",
+                "-c",
+                "find src/ include/ -name '*.c' -o -name '*.h' "
+                "| grep -v ext/ "
+                "| xargs clang-format --dry-run --Werror 2>&1 || true",
+            ]
+        ).stdout()
+
+        # cppcheck
+        cppcheck_result = await ctr.with_exec(
+            [
+                "bash",
+                "-c",
+                "cppcheck --enable=warning,style,performance "
+                "--suppress=missingIncludeSystem "
+                "--suppress=unusedFunction "
+                "-Iinclude -I. "
+                "src/ include/ 2>&1",
+            ]
+        ).stdout()
+
+        # clang-tidy (needs compile_commands.json)
+        tidy_result = await (
+            ctr.with_exec(
+                ["bash", "-c", "cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build ."]
+            )
+            .with_exec(
+                [
+                    "bash",
+                    "-c",
+                    "find src/ -name '*.c' "
+                    "| grep -v ext/ "
+                    "| xargs clang-tidy -p build "
+                    "--config-file=.clang-tidy 2>&1 || true",
+                ]
+            )
+            .stdout()
+        )
+
+        return (
+            "=== clang-format ===\n"
+            + (fmt_result.strip() or "(clean)")
+            + "\n\n=== cppcheck ===\n"
+            + (cppcheck_result.strip() or "(clean)")
+            + "\n\n=== clang-tidy ===\n"
+            + (tidy_result.strip() or "(clean)")
+            + "\n"
+        )
+
+    @function
+    async def lint_format(self, src: dagger.Directory) -> str:
+        """Check C code formatting with clang-format (dry-run)."""
+        return await (
+            self._lint_container(src)
+            .with_exec(
+                [
+                    "bash",
+                    "-c",
+                    "find src/ include/ -name '*.c' -o -name '*.h' "
+                    "| grep -v ext/ "
+                    "| xargs clang-format --dry-run --Werror 2>&1; "
+                    'echo "exit: $?"',
+                ]
+            )
+            .stdout()
+        )
+
+    @function
+    async def lint_cppcheck(self, src: dagger.Directory) -> str:
+        """Run cppcheck static analysis on C source."""
+        return await (
+            self._lint_container(src)
+            .with_exec(
+                [
+                    "bash",
+                    "-c",
+                    "cppcheck --enable=warning,style,performance "
+                    "--suppress=missingIncludeSystem "
+                    "--suppress=unusedFunction "
+                    "--error-exitcode=1 "
+                    "-Iinclude -I. "
+                    "src/ include/ 2>&1",
+                ]
+            )
+            .stdout()
+        )
+
+    @function
+    async def lint_tidy(self, src: dagger.Directory) -> str:
+        """Run clang-tidy static analysis on C source."""
+        return await (
+            self._lint_container(src)
+            .with_exec(
+                ["bash", "-c", "cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build ."]
+            )
+            .with_exec(
+                [
+                    "bash",
+                    "-c",
+                    "find src/ -name '*.c' "
+                    "| grep -v ext/ "
+                    "| xargs clang-tidy -p build "
+                    "--config-file=.clang-tidy 2>&1; "
+                    'echo "exit: $?"',
                 ]
             )
             .stdout()
