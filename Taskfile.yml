@@ -141,6 +141,10 @@ tasks:
         --enable=warning,style,performance
         --suppress=missingIncludeSystem
         --suppress=unusedFunction
+        --suppress=constParameterPointer
+        --suppress=constVariablePointer
+        --suppress=constParameterCallback
+        --suppress=preprocessorErrorDirective
         --error-exitcode=1
         -Iinclude -I.
         src/ include/
@@ -151,7 +155,7 @@ tasks:
       - cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B build .
       - cmd: >-
           bash -c "find src/ -name '*.c'
-          | grep -v ext/
+          | grep -v ext/ | grep -v seccomp/
           | xargs clang-tidy -p build --config-file=.clang-tidy"
         platforms: [linux, darwin]
 

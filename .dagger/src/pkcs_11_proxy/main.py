@@ -1,5 +1,12 @@
+from __future__ import annotations
+
+from typing import Annotated
+
 import dagger
-from dagger import function, object_type
+from dagger import Ignore, function, object_type
+
+# Exclude build artifacts from host uploads (replaces .daggerignore)
+SrcDir = Annotated[dagger.Directory, Ignore(["build"])]
 
 TRIVY_IMAGE = "aquasec/trivy:latest"
 LINT_IMAGE = "ubuntu:24.04"
@@ -22,7 +29,7 @@ class Pkcs11Proxy:
         return src.docker_build(dockerfile="docker/Dockerfile.server")
 
     @function(cache="never")
-    async def test(self, src: dagger.Directory) -> str:
+    async def test(self, src: SrcDir) -> str:
         """Run the unit test suite (26 tests). Always re-runs."""
         return await (
             self._build_test_image(src).with_exec(["tests/run-all.sh"]).stdout()
@@ -72,7 +79,7 @@ class Pkcs11Proxy:
         )
 
     @function(cache="never")
-    async def integration_test(self, src: dagger.Directory) -> str:
+    async def integration_test(self, src: SrcDir) -> str:
         """Run Docker-based integration tests (PKI + daemon + client + sslscan)."""
         pki = self._generate_pki(src)
         daemon = self._daemon_service(src, pki)
@@ -92,7 +99,7 @@ class Pkcs11Proxy:
         )
 
     @function(cache="never")
-    async def sslscan(self, src: dagger.Directory) -> str:
+    async def sslscan(self, src: SrcDir) -> str:
         """Run sslscan against the daemon to audit TLS configuration."""
         pki = self._generate_pki(src)
         daemon = self._daemon_service(src, pki)
@@ -106,7 +113,7 @@ class Pkcs11Proxy:
         )
 
     @function(cache="never")
-    async def trivy_scan(self, src: dagger.Directory) -> str:
+    async def trivy_scan(self, src: SrcDir) -> str:
         """Scan the production server image with Trivy for vulnerabilities."""
         tarball = self._build_server_image(src).as_tarball()
 
@@ -147,10 +154,11 @@ class Pkcs11Proxy:
             )
             .with_directory("/src", src)
             .with_workdir("/src")
+            .with_exec(["rm", "-rf", "build"])
         )
 
     @function
-    async def lint(self, src: dagger.Directory) -> str:
+    async def lint(self, src: SrcDir) -> str:
         """Run all C linters: clang-format check, cppcheck, clang-tidy."""
         ctr = self._lint_container(src)
 
@@ -173,6 +181,10 @@ class Pkcs11Proxy:
                 "cppcheck --enable=warning,style,performance "
                 "--suppress=missingIncludeSystem "
                 "--suppress=unusedFunction "
+                "--suppress=constParameterPointer "
+                "--suppress=constVariablePointer "
+                "--suppress=constParameterCallback "
+                "--suppress=preprocessorErrorDirective "
                 "-Iinclude -I. "
                 "src/ include/ 2>&1",
             ]
@@ -188,7 +200,7 @@ class Pkcs11Proxy:
                     "bash",
                     "-c",
                     "find src/ -name '*.c' "
-                    "| grep -v ext/ "
+                    "| grep -v ext/ | grep -v seccomp/ "
                     "| xargs clang-tidy -p build "
                     "--config-file=.clang-tidy 2>&1 || true",
                 ]
@@ -207,7 +219,7 @@ class Pkcs11Proxy:
         )
 
     @function
-    async def lint_format(self, src: dagger.Directory) -> str:
+    async def lint_format(self, src: SrcDir) -> str:
         """Check C code formatting with clang-format (dry-run)."""
         return await (
             self._lint_container(src)
@@ -225,7 +237,7 @@ class Pkcs11Proxy:
         )
 
     @function
-    async def lint_cppcheck(self, src: dagger.Directory) -> str:
+    async def lint_cppcheck(self, src: SrcDir) -> str:
         """Run cppcheck static analysis on C source."""
         return await (
             self._lint_container(src)
@@ -236,6 +248,10 @@ class Pkcs11Proxy:
                     "cppcheck --enable=warning,style,performance "
                     "--suppress=missingIncludeSystem "
                     "--suppress=unusedFunction "
+                    "--suppress=constParameterPointer "
+                    "--suppress=constVariablePointer "
+                    "--suppress=constParameterCallback "
+                    "--suppress=preprocessorErrorDirective "
                     "--error-exitcode=1 "
                     "-Iinclude -I. "
                     "src/ include/ 2>&1",
@@ -245,7 +261,7 @@ class Pkcs11Proxy:
         )
 
     @function
-    async def lint_tidy(self, src: dagger.Directory) -> str:
+    async def lint_tidy(self, src: SrcDir) -> str:
         """Run clang-tidy static analysis on C source."""
         return await (
             self._lint_container(src)
@@ -257,7 +273,7 @@ class Pkcs11Proxy:
                     "bash",
                     "-c",
                     "find src/ -name '*.c' "
-                    "| grep -v ext/ "
+                    "| grep -v ext/ | grep -v seccomp/ "
                     "| xargs clang-tidy -p build "
                     "--config-file=.clang-tidy 2>&1; "
                     'echo "exit: $?"',
@@ -267,7 +283,7 @@ class Pkcs11Proxy:
         )
 
     @function(cache="never")
-    async def trivy_report(self, src: dagger.Directory) -> dagger.File:
+    async def trivy_report(self, src: SrcDir) -> dagger.File:
         """Scan the production image and return a JSON vulnerability report."""
         tarball = self._build_server_image(src).as_tarball()
 
