@@ -363,7 +363,6 @@ main(int argc, char *argv[])
 		mode = GCP_RPC_DAEMON_MODE_SOCKET;
 	}
 
-	fprintf(stderr, "  listen: %s\n", path);
 	fprintf(stderr, "pkcs11-proxy ready\n");
 
 	/*
