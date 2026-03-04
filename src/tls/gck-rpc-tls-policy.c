@@ -208,6 +208,43 @@ _count_fields(const cJSON *root)
 	return count;
 }
 
+/* Helper: warn about unexpected fields not in the allowed set.
+ * allowed is a NULL-terminated array of field names.
+ */
+static void
+_warn_extra_fields(const cJSON *root, const char *const *allowed, int allowed_count,
+                   const char *label)
+{
+	const cJSON *item;
+	char extras[512];
+	int pos = 0;
+
+	cJSON_ArrayForEach(item, root)
+	{
+		int found = 0;
+		for (int i = 0; i < allowed_count; i++) {
+			if (strcmp(item->string, allowed[i]) == 0) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found && pos < (int)sizeof(extras) - 2) {
+			if (pos > 0) {
+				extras[pos++] = ',';
+				extras[pos++] = ' ';
+			}
+			int n = snprintf(extras + pos, sizeof(extras) - (size_t)pos, "'%s'",
+			                 item->string);
+			if (n > 0)
+				pos += n;
+		}
+	}
+	extras[pos] = '\0';
+
+	warning(("%s policy has %d fields (expected %d); extra: %s", label, _count_fields(root),
+	         allowed_count, extras));
+}
+
 PolicyResult
 policy_validate_server(const char *json, int json_len, const char *expected_service,
                        const char *expected_namespace, const char *expected_keyset)
@@ -251,7 +288,9 @@ policy_validate_server(const char *json, int json_len, const char *expected_serv
 	}
 
 	if (_count_fields(root) != 4) {
-		warning(("policy: server policy has %d fields, expected 4", _count_fields(root)));
+		static const char *const server_fields[]
+		    = { "v", "service", "namespace", "keyset" };
+		_warn_extra_fields(root, server_fields, 4, "server");
 		r = POLICY_ERR_EXTRA_FIELDS;
 		goto done;
 	}
@@ -321,7 +360,9 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 	}
 
 	if (_count_fields(root) != 7) {
-		warning(("policy: client policy has %d fields, expected 7", _count_fields(root)));
+		static const char *const client_fields[]
+		    = { "v", "iss", "repo", "workflow", "ref", "aud", "keyset" };
+		_warn_extra_fields(root, client_fields, 7, "client");
 		r = POLICY_ERR_EXTRA_FIELDS;
 		goto done;
 	}
@@ -331,4 +372,22 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 done:
 	cJSON_Delete(root);
 	return r;
+}
+
+char *
+policy_pretty_json(const char *json, int json_len)
+{
+	cJSON *root;
+	char *pretty;
+
+	if (!json || json_len <= 0)
+		return NULL;
+
+	root = cJSON_ParseWithLength(json, (size_t)json_len);
+	if (!root)
+		return NULL;
+
+	pretty = cJSON_Print(root);
+	cJSON_Delete(root);
+	return pretty;
 }

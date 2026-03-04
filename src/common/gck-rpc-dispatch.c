@@ -2304,7 +2304,7 @@ run_dispatch_loop(CallState *cs)
 		return;
 	}
 
-	gck_rpc_log("New session %d-%d (client %s, port %s)\n", (uint32_t)(cs->appid >> 32),
+	gck_rpc_log("New session %d-%d (client %s:%s)", (uint32_t)(cs->appid >> 32),
 	            (uint32_t)cs->appid, hoststr, portstr);
 
 	/* Setup our buffers */
@@ -2371,8 +2371,7 @@ run_dispatch_loop(CallState *cs)
 		}
 	}
 
-	gck_rpc_log("dispatch-loop: end (sock=%d, client %s:%s) — cleaning up sessions", cs->sock,
-	            hoststr, portstr);
+	gck_rpc_log("Client %s:%s disconnected", hoststr, portstr);
 
 	/* Clean up per-connection TLS before sessions */
 	if (cs->conn_ssl) {

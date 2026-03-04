@@ -27,7 +27,6 @@
 
 #include "config.h"
 
-#include "ext/cjson/cJSON.h"
 #include "gck-rpc-private.h"
 #include "gck-rpc-tls-policy.h"
 #include "gck-rpc-tls.h"
@@ -259,28 +258,11 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			}
 
 			/* Log the validated client identity */
+			gck_rpc_log("OID policy OK (client)");
 			{
-				cJSON *root = cJSON_ParseWithLength(json, json_len);
-				if (root) {
-					const cJSON *repo
-					    = cJSON_GetObjectItemCaseSensitive(root, "repo");
-					const cJSON *workflow
-					    = cJSON_GetObjectItemCaseSensitive(root, "workflow");
-					const cJSON *ref
-					    = cJSON_GetObjectItemCaseSensitive(root, "ref");
-					const cJSON *keyset
-					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log(
-					    "OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
-					    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
-					    workflow && cJSON_IsString(workflow)
-					        ? workflow->valuestring
-					        : "?",
-					    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
-					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
-					                                     : "?");
-					cJSON_Delete(root);
-				}
+				char *pretty = policy_pretty_json(json, json_len);
+				gck_rpc_log("%s", pretty ? pretty : json);
+				free(pretty);
 			}
 			free(json);
 		}
@@ -318,25 +300,11 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			}
 
 			/* Log the validated server identity */
+			gck_rpc_log("OID policy OK (server)");
 			{
-				cJSON *root = cJSON_ParseWithLength(json, json_len);
-				if (root) {
-					const cJSON *service
-					    = cJSON_GetObjectItemCaseSensitive(root, "service");
-					const cJSON *ns
-					    = cJSON_GetObjectItemCaseSensitive(root, "namespace");
-					const cJSON *keyset
-					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log(
-					    "OID policy OK: service=%s namespace=%s keyset=%s",
-					    service && cJSON_IsString(service)
-					        ? service->valuestring
-					        : "?",
-					    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
-					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
-					                                     : "?");
-					cJSON_Delete(root);
-				}
+				char *pretty = policy_pretty_json(json, json_len);
+				gck_rpc_log("%s", pretty ? pretty : json);
+				free(pretty);
 			}
 			free(json);
 		}
@@ -465,28 +433,11 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			}
 
 			/* Log the validated client identity */
+			gck_rpc_log("OID policy OK (client)");
 			{
-				cJSON *root = cJSON_ParseWithLength(json, json_len);
-				if (root) {
-					const cJSON *repo
-					    = cJSON_GetObjectItemCaseSensitive(root, "repo");
-					const cJSON *workflow
-					    = cJSON_GetObjectItemCaseSensitive(root, "workflow");
-					const cJSON *ref
-					    = cJSON_GetObjectItemCaseSensitive(root, "ref");
-					const cJSON *keyset
-					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log(
-					    "OID policy OK: repo=%s workflow=%s ref=%s keyset=%s",
-					    repo && cJSON_IsString(repo) ? repo->valuestring : "?",
-					    workflow && cJSON_IsString(workflow)
-					        ? workflow->valuestring
-					        : "?",
-					    ref && cJSON_IsString(ref) ? ref->valuestring : "?",
-					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
-					                                     : "?");
-					cJSON_Delete(root);
-				}
+				char *pretty = policy_pretty_json(json, json_len);
+				gck_rpc_log("%s", pretty ? pretty : json);
+				free(pretty);
 			}
 			free(json);
 		}
@@ -526,25 +477,11 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			}
 
 			/* Log the validated server identity */
+			gck_rpc_log("OID policy OK (server)");
 			{
-				cJSON *root = cJSON_ParseWithLength(json, json_len);
-				if (root) {
-					const cJSON *service
-					    = cJSON_GetObjectItemCaseSensitive(root, "service");
-					const cJSON *ns
-					    = cJSON_GetObjectItemCaseSensitive(root, "namespace");
-					const cJSON *keyset
-					    = cJSON_GetObjectItemCaseSensitive(root, "keyset");
-					gck_rpc_log(
-					    "OID policy OK: service=%s namespace=%s keyset=%s",
-					    service && cJSON_IsString(service)
-					        ? service->valuestring
-					        : "?",
-					    ns && cJSON_IsString(ns) ? ns->valuestring : "?",
-					    keyset && cJSON_IsString(keyset) ? keyset->valuestring
-					                                     : "?");
-					cJSON_Delete(root);
-				}
+				char *pretty = policy_pretty_json(json, json_len);
+				gck_rpc_log("%s", pretty ? pretty : json);
+				free(pretty);
 			}
 			free(json);
 		}

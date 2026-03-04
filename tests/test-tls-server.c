@@ -25,35 +25,41 @@
  *   4 = OID policy verification failed
  */
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <errno.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include <unistd.h>
 
-#include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
 #include "gck-rpc-tls-policy.h"
 
 static volatile int running = 1;
 
-static void sighandler(int sig) {
+static void
+sighandler(int sig)
+{
 	(void)sig;
 	running = 0;
 }
 
-static const char *getenv_or(const char *name, const char *def) {
+static const char *
+getenv_or(const char *name, const char *def)
+{
 	const char *v = getenv(name);
 	return (v && v[0]) ? v : def;
 }
 
-int main(void) {
+int
+main(void)
+{
 	SSL_CTX *ctx = NULL;
 	SSL *ssl = NULL;
 	int listen_fd = -1, client_fd = -1;
@@ -71,7 +77,8 @@ int main(void) {
 	int require_mtls = (strcmp(require_mtls_str, "true") == 0);
 
 	if (!cert_file || !key_file || !ca_file) {
-		fprintf(stderr, "test-tls-server: TEST_TLS_CERT, TEST_TLS_KEY, TEST_TLS_CA required\n");
+		fprintf(stderr,
+		        "test-tls-server: TEST_TLS_CERT, TEST_TLS_KEY, TEST_TLS_CA required\n");
 		return 1;
 	}
 
@@ -82,14 +89,14 @@ int main(void) {
 		goto cleanup;
 	}
 
-	if (!SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) ||
-	    !SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION)) {
+	if (!SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION)
+	    || !SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION)) {
 		fprintf(stderr, "test-tls-server: failed to set TLS 1.3\n");
 		goto cleanup;
 	}
 
-	SSL_CTX_set_ciphersuites(ctx,
-		"TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256");
+	SSL_CTX_set_ciphersuites(
+	    ctx, "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256");
 	SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
 
 	if (SSL_CTX_use_certificate_chain_file(ctx, cert_file) != 1) {
@@ -106,8 +113,7 @@ int main(void) {
 	}
 
 	if (require_mtls) {
-		SSL_CTX_set_verify(ctx,
-			SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 	}
 
 	/* Listen socket */
@@ -180,14 +186,14 @@ int main(void) {
 		int ssl_err = SSL_get_error(ssl, hs);
 		char errbuf[256];
 		ERR_error_string_n(ERR_get_error(), errbuf, sizeof(errbuf));
-		fprintf(stderr, "test-tls-server: handshake failed (ssl_err=%d): %s\n",
-			ssl_err, errbuf);
+		fprintf(stderr, "test-tls-server: handshake failed (ssl_err=%d): %s\n", ssl_err,
+		        errbuf);
 		ret = 2;
 		goto cleanup;
 	}
 
 	fprintf(stderr, "test-tls-server: handshake OK, protocol=%s cipher=%s\n",
-		SSL_get_version(ssl), SSL_get_cipher_name(ssl));
+	        SSL_get_version(ssl), SSL_get_cipher_name(ssl));
 
 	/* OID policy verification (if requested) */
 	const char *verify_oid = getenv("TEST_TLS_VERIFY_OID");
@@ -207,7 +213,12 @@ int main(void) {
 			goto cleanup;
 		}
 
-		fprintf(stderr, "test-tls-server: OID policy JSON: %.*s\n", json_len, json);
+		{
+			char *pretty = policy_pretty_json(json, json_len);
+			fprintf(stderr, "test-tls-server: OID policy JSON:\n%s\n",
+			        pretty ? pretty : json);
+			free(pretty);
+		}
 
 		/* Determine which validation to use based on env vars */
 		const char *expect_repo = getenv("TEST_TLS_EXPECT_REPO");
@@ -215,21 +226,23 @@ int main(void) {
 
 		if (expect_repo) {
 			/* Validate as client policy */
-			const char *expect_keyset = getenv_or("TEST_TLS_EXPECT_KEYSET", "cosign-v1");
+			const char *expect_keyset
+			    = getenv_or("TEST_TLS_EXPECT_KEYSET", "cosign-v1");
 			pr = policy_validate_client(json, json_len, expect_repo, expect_keyset);
 		} else {
 			/* Validate as server policy (checking client cert's server-style fields) */
 			const char *expect_svc = getenv("TEST_TLS_EXPECT_SERVICE");
 			const char *expect_ns = getenv("TEST_TLS_EXPECT_NAMESPACE");
 			const char *expect_ks = getenv("TEST_TLS_EXPECT_KEYSET");
-			pr = policy_validate_server(json, json_len, expect_svc, expect_ns, expect_ks);
+			pr = policy_validate_server(json, json_len, expect_svc, expect_ns,
+			                            expect_ks);
 		}
 
 		free(json);
 
 		if (pr != POLICY_OK) {
 			fprintf(stderr, "test-tls-server: OID policy REJECTED: %s\n",
-				policy_result_str(pr));
+			        policy_result_str(pr));
 			ret = 4;
 			goto cleanup;
 		}
@@ -261,9 +274,12 @@ cleanup:
 		SSL_shutdown(ssl);
 		SSL_free(ssl);
 	}
-	if (ctx) SSL_CTX_free(ctx);
-	if (client_fd >= 0) close(client_fd);
-	if (listen_fd >= 0) close(listen_fd);
+	if (ctx)
+		SSL_CTX_free(ctx);
+	if (client_fd >= 0)
+		close(client_fd);
+	if (listen_fd >= 0)
+		close(listen_fd);
 
 	return ret;
 }

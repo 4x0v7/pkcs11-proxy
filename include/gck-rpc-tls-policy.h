@@ -61,4 +61,9 @@ PolicyResult policy_validate_client(const char *json, int json_len, const char *
 /* Return a human-readable string for a PolicyResult. */
 const char *policy_result_str(PolicyResult r);
 
+/* Pretty-print a raw JSON string.  Caller must free() the result.
+ * Returns NULL on parse error (caller should fall back to raw string).
+ */
+char *policy_pretty_json(const char *json, int json_len);
+
 #endif /* GCKRPC_TLS_POLICY_H_ */

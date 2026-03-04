@@ -583,11 +583,13 @@ start_daemon() {
     local port
     port=$(find_free_port)
 
+    DAEMON_LOG=$(mktemp)
+
     PKCS11_PROXY_TLS_CERT="${cert}" \
     PKCS11_PROXY_TLS_KEY="${key}" \
     PKCS11_PROXY_TLS_CA="${ca}" \
     PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
-    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" &
+    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" 2>"${DAEMON_LOG}" &
     DAEMON_PID=$!
     DAEMON_PORT="${port}"
 
@@ -609,6 +611,8 @@ stop_daemon() {
     fi
     DAEMON_PID=""
     DAEMON_PORT=""
+    rm -f "${DAEMON_LOG:-}"
+    DAEMON_LOG=""
 }
 
 # Run pkcs11-tool through proxy, connecting to daemon via TLS.
@@ -695,11 +699,13 @@ start_daemon_seccomp() {
     local port
     port=$(find_free_port)
 
+    DAEMON_LOG=$(mktemp)
+
     PKCS11_PROXY_TLS_CERT="${cert}" \
     PKCS11_PROXY_TLS_KEY="${key}" \
     PKCS11_PROXY_TLS_CA="${ca}" \
     PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
-    "${PKCS11_DAEMON_SECCOMP}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" &
+    "${PKCS11_DAEMON_SECCOMP}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" 2>"${DAEMON_LOG}" &
     DAEMON_PID=$!
     DAEMON_PORT="${port}"
 
@@ -783,13 +789,15 @@ start_daemon_with_policy() {
     local port
     port=$(find_free_port)
 
+    DAEMON_LOG=$(mktemp)
+
     PKCS11_PROXY_TLS_CERT="${cert}" \
     PKCS11_PROXY_TLS_KEY="${key}" \
     PKCS11_PROXY_TLS_CA="${ca}" \
     PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
     PKCS11_PROXY_TLS_POLICY_REPO="${policy_repo}" \
     PKCS11_PROXY_TLS_POLICY_KEYSET="${policy_keyset}" \
-    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" &
+    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" 2>"${DAEMON_LOG}" &
     DAEMON_PID=$!
     DAEMON_PORT="${port}"
 
@@ -882,6 +890,83 @@ test_oid_policy_daemon() {
             pass "T63: Wrong-keyset client → daemon rejects"
         else
             fail "T63: Wrong-keyset client → daemon rejects" "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T64: Daemon startup log shows OID enforcement enabled
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T64" "daemon failed to start"
+    else
+        if grep -q "OID enforcement enabled (repo=org/repo keyset=cosign-v1)" "${DAEMON_LOG}"; then
+            pass "T64: Daemon startup log shows OID enforcement enabled"
+        else
+            fail "T64: Daemon startup log shows OID enforcement enabled" \
+                "log: $(cat "${DAEMON_LOG}")"
+        fi
+    fi
+    stop_daemon
+
+    # T65: Daemon startup log shows OID enforcement disabled when env vars unset
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T65" "daemon failed to start"
+    else
+        if grep -q "OID enforcement disabled" "${DAEMON_LOG}"; then
+            pass "T65: Daemon startup log shows OID enforcement disabled"
+        else
+            fail "T65: Daemon startup log shows OID enforcement disabled" \
+                "log: $(cat "${DAEMON_LOG}")"
+        fi
+    fi
+    stop_daemon
+
+    # T66: Daemon logs "OID policy OK" with client identity on valid connection
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T66" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        # Give daemon a moment to flush log
+        sleep 0.2
+        if grep -q "OID policy OK (client)" "${DAEMON_LOG}" \
+            && grep -q '"repo":' "${DAEMON_LOG}"; then
+            pass "T66: Daemon logs OID policy OK with client identity"
+        else
+            fail "T66: Daemon logs OID policy OK with client identity" \
+                "log: $(cat "${DAEMON_LOG}")"
+        fi
+    fi
+    stop_daemon
+
+    # T67: Daemon logs OID rejection reason on invalid client
+    start_daemon_with_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1"
+    if [ $? -ne 0 ]; then
+        fail "T67" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-no-oid.crt" "${PKI_DIR}/client-no-oid.key" || true
+        sleep 0.2
+        if grep -q "OID policy:" "${DAEMON_LOG}"; then
+            pass "T67: Daemon logs OID rejection reason"
+        else
+            fail "T67: Daemon logs OID rejection reason" \
+                "log: $(cat "${DAEMON_LOG}")"
         fi
     fi
     stop_daemon

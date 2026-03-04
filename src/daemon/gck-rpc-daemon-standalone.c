@@ -341,8 +341,17 @@ main(int argc, char *argv[])
 		}
 		{
 			const char *mtls_env = getenv("PKCS11_PROXY_TLS_REQUIRE_MTLS");
+			const char *policy_repo = getenv("PKCS11_PROXY_TLS_POLICY_REPO");
+			const char *policy_keyset = getenv("PKCS11_PROXY_TLS_POLICY_KEYSET");
 			fprintf(stderr, "  tls:    TLS 1.3 server initialized (mTLS=%s)\n",
 			        mtls_env && strcmp(mtls_env, "true") == 0 ? "required" : "off");
+			if (policy_repo && policy_repo[0] && policy_keyset && policy_keyset[0]) {
+				fprintf(stderr,
+				        "  policy: OID enforcement enabled (repo=%s keyset=%s)\n",
+				        policy_repo, policy_keyset);
+			} else {
+				fprintf(stderr, "  policy: OID enforcement disabled\n");
+			}
 		}
 	}
 
