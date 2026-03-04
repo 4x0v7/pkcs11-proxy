@@ -31,7 +31,7 @@ class Pkcs11Proxy:
 
     @function(cache="never")
     async def test(self, src: SrcDir) -> str:
-        """Run the unit test suite (26 tests). Always re-runs."""
+        """Run the unit test suite. Always re-runs."""
         return await (
             self._build_test_image(src).with_exec(["tests/run-all.sh"]).stdout()
         )

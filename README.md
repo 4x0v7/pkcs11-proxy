@@ -7,15 +7,15 @@ This allows cryptographic keys (e.g. code-signing keys in a HSM) to be accessed 
 ## Architecture
 
 ```
-┌─────────────────┐         TLS 1.3 mTLS          ┌──────────────────────┐
-│  Client          │ ◄──────────────────────────► │  Server (Daemon)      │
+┌──────────────────┐         TLS 1.3 mTLS          ┌───────────────────────┐
+│  Client          │ ◄──────────────────────────►  │  Server (Daemon)      │
 │                  │                               │                       │
 │  Application     │                               │  pkcs11-daemon        │
 │    ↓             │                               │    ↓                  │
 │  libpkcs11-proxy │                               │  gck-rpc-dispatch     │
 │  (PKCS#11 shim)  │                               │    ↓                  │
 │                  │                               │  SoftHSM / HSM module │
-└─────────────────┘                               └──────────────────────┘
+└──────────────────┘                               └───────────────────────┘
 ```
 
 - **`pkcs11-daemon`** — Loads a real PKCS#11 module (e.g. SoftHSM, CloudHSM) and listens on a TCP/TLS socket.
@@ -66,9 +66,11 @@ gcc -o pkcs11-daemon-seccomp \
 
 ### Docker build
 
+Both images use [Chainguard Wolfi](https://images.chainguard.dev/directory/image/wolfi-base/overview) (`cgr.dev/chainguard/wolfi-base`) — a minimal, glibc-based, zero-CVE container base.
+
 ```bash
-task build          # Production image
-task test:build     # Test image with SoftHSM + test PKI
+task build          # Production image (Wolfi, ~129 MB)
+task test:build     # Test image with SoftHSM + step CLI + test PKI
 ```
 
 ## Quick Start
@@ -298,7 +300,7 @@ task test:run           # Run tests (image must exist)
 task test:shell         # Interactive shell in test container
 ```
 
-### Unit test coverage (26 tests)
+### Unit test coverage (34 tests)
 
 | Tests | Category | Description |
 |---|---|---|
@@ -309,6 +311,8 @@ task test:shell         # Interactive shell in test container
 | T40–T41 | Data Integrity | Full PKCS#11 crypto round-trip over mTLS (EC P-256 keygen, ECDSA sign/verify) |
 | T50–T51 | Seccomp | PKCS#11 crypto round-trip with seccomp-BPF syscall filtering enabled |
 | T60–T63 | OID Policy (Daemon) | Production daemon with policy enforcement (accept valid, reject wrong repo, reject no OID, reject wrong keyset) |
+| T64–T67 | OID Policy (Logging) | Daemon startup shows enforcement enabled/disabled, logs pretty-printed OID JSON on accept, logs rejection reason |
+| T70–T73 | Concurrent Connections | Health-probe race resilience: crypto after probes, concurrent probes, interleaved sessions |
 
 ### Integration tests (5 tests)
 
@@ -337,12 +341,14 @@ task dagger:test          # Unit tests via Dagger
 task dagger:integration   # Integration tests via Dagger
 ```
 
-The [Dagger](https://dagger.io/) module (`.dagger/`) replicates the Docker Compose integration pipeline as pure Dagger Functions with no `docker-compose` dependency. The Docker image build (including the slow `apt-get` layer) is layer-cached; test execution always re-runs via `cache="never"`.
+The [Dagger](https://dagger.io/) module (`.dagger/`) replicates the Docker Compose integration pipeline as pure Dagger Functions with no `docker-compose` dependency. The Docker image build (including the slow `apk` layer) is layer-cached; test execution always re-runs via `cache="never"`.
 
 | Function | Description |
 |---|---|
-| `test` | Builds test image, runs 26 unit tests |
+| `test` | Builds test image, runs 34 unit tests |
 | `integration-test` | Generates ephemeral PKI, starts daemon as a Dagger service, runs 5 integration tests via service binding |
+| `sslscan` | Runs sslscan against the daemon to audit TLS configuration |
+| `trivy-scan` | Scans production server image with Trivy for vulnerabilities |
 
 ## Development Tools
 
@@ -437,8 +443,8 @@ task dagger:lint         # Containerized — only requires dagger
 │   │   ├── gck-rpc-util.c               # Shared utilities
 │   │   └── egg-buffer.c                 # Dynamic buffer implementation
 │   ├── tls/
-│   │   ├── gck-rpc-tls.c               # TLS 1.3 init, handshake, policy wiring
-│   │   └── gck-rpc-tls-policy.c        # OID JSON extraction and validation
+│   │   ├── gck-rpc-tls.c                # TLS 1.3 init, handshake, policy wiring
+│   │   └── gck-rpc-tls-policy.c         # OID JSON extraction and validation
 │   └── seccomp/
 │       └── syscall-reporter.c           # Seccomp syscall reporter
 ├── include/                             # All header files
@@ -450,6 +456,7 @@ task dagger:lint         # Containerized — only requires dagger
 ├── .dagger/
 │   └── src/pkcs_11_proxy/main.py        # Dagger CI module (test + integration-test)
 ├── docker/
+│   ├── Dockerfile.server                # Production image (Wolfi, multi-stage)
 │   ├── Dockerfile.test                  # Test image (SoftHSM + step CLI + test PKI)
 │   ├── docker-compose.test.yml          # Integration test compose file
 │   └── integration/
@@ -458,12 +465,12 @@ task dagger:lint         # Containerized — only requires dagger
 │       ├── entrypoint-server.sh         # Server container entrypoint
 │       └── entrypoint-client.sh         # Client container entrypoint (I1–I5)
 ├── tests/
-│   ├── run-all.sh                       # Unit test runner (T01–T63)
+│   ├── run-all.sh                       # Unit test runner (T01–T73)
 │   ├── generate-test-pki.sh             # Unit test PKI generator (step CLI)
 │   ├── templates/                       # Step CLI certificate templates
-│   ├── test-tls-server.c               # TLS test harness (server)
-│   ├── test-tls-client.c               # TLS test harness (client)
-│   └── test-pkcs11-tool.c              # PKCS#11 crypto test (EC keygen, ECDSA sign/verify)
+│   ├── test-tls-server.c                # TLS test harness (server)
+│   ├── test-tls-client.c                # TLS test harness (client)
+│   └── test-pkcs11-tool.c               # PKCS#11 crypto test (EC keygen, ECDSA sign/verify)
 ├── .clang-format                        # clang-format style config
 ├── .clang-tidy                          # clang-tidy checks config
 ├── CMakeLists.txt                       # Build system
