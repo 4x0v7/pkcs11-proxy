@@ -811,6 +811,42 @@ start_daemon_with_policy() {
     return 0
 }
 
+# Start daemon with both CI and service client OID policy enforcement.
+# Usage: start_daemon_with_dual_policy <server_cert> <server_key> <ca_cert> <policy_repo> <policy_keyset> <policy_svc_ns>
+start_daemon_with_dual_policy() {
+    local cert="$1"
+    local key="$2"
+    local ca="$3"
+    local policy_repo="$4"
+    local policy_keyset="$5"
+    local policy_svc_ns="$6"
+
+    local port
+    port=$(find_free_port)
+
+    DAEMON_LOG=$(mktemp)
+
+    PKCS11_PROXY_TLS_CERT="${cert}" \
+    PKCS11_PROXY_TLS_KEY="${key}" \
+    PKCS11_PROXY_TLS_CA="${ca}" \
+    PKCS11_PROXY_TLS_REQUIRE_MTLS="true" \
+    PKCS11_PROXY_TLS_POLICY_REPO="${policy_repo}" \
+    PKCS11_PROXY_TLS_POLICY_KEYSET="${policy_keyset}" \
+    PKCS11_PROXY_TLS_POLICY_SERVICE_NS="${policy_svc_ns}" \
+    "${PKCS11_DAEMON}" "${SOFTHSM_MODULE}" "tls://0.0.0.0:${port}" 2>"${DAEMON_LOG}" &
+    DAEMON_PID=$!
+    DAEMON_PORT="${port}"
+
+    sleep 0.5
+
+    if ! kill -0 "${DAEMON_PID}" 2>/dev/null; then
+        DAEMON_PID=""
+        DAEMON_PORT=""
+        return 1
+    fi
+    return 0
+}
+
 test_oid_policy_daemon() {
     log_header "OID Policy via Daemon"
 
@@ -902,7 +938,7 @@ test_oid_policy_daemon() {
     if [ $? -ne 0 ]; then
         fail "T64" "daemon failed to start"
     else
-        if grep -q "OID enforcement enabled (repo=org/repo keyset=cosign-v1)" "${DAEMON_LOG}"; then
+        if grep -q "CI client OID enabled (repo=org/repo keyset=cosign-v1)" "${DAEMON_LOG}"; then
             pass "T64: Daemon startup log shows OID enforcement enabled"
         else
             fail "T64: Daemon startup log shows OID enforcement enabled" \
@@ -940,7 +976,7 @@ test_oid_policy_daemon() {
             "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
         # Give daemon a moment to flush log
         sleep 0.2
-        if grep -q "OID policy OK (client)" "${DAEMON_LOG}" \
+        if grep -q "OID policy OK (ci-client)" "${DAEMON_LOG}" \
             && grep -q '"repo":' "${DAEMON_LOG}"; then
             pass "T66: Daemon logs OID policy OK with client identity"
         else
@@ -966,6 +1002,140 @@ test_oid_policy_daemon() {
             pass "T67: Daemon logs OID rejection reason"
         else
             fail "T67: Daemon logs OID rejection reason" \
+                "log: $(cat "${DAEMON_LOG}")"
+        fi
+    fi
+    stop_daemon
+}
+
+# ═══════════════════════════════════════════
+# SERVICE CLIENT OID POLICY via Daemon (T80-T85)
+# Tests the service client policy path
+# ({v, service, namespace, keyset}) through
+# the full daemon, alongside CI client policy.
+# ═══════════════════════════════════════════
+
+test_service_client_policy_daemon() {
+    log_header "Service Client OID Policy via Daemon"
+
+    # T80: Valid service client cert → daemon accepts PKCS#11 operation
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T80" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/svc-client-valid.crt" "${PKI_DIR}/svc-client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T80: Valid service client → daemon accepts (crypto)"
+        else
+            fail "T80: Valid service client → daemon accepts (crypto)" \
+                "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
+
+    # T81: Service client with wrong namespace → daemon rejects
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T81" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/svc-client-wrong-ns.crt" "${PKI_DIR}/svc-client-wrong-ns.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T81: Service client wrong namespace → daemon rejects"
+        else
+            fail "T81: Service client wrong namespace → daemon rejects" \
+                "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T82: Service client with wrong keyset → daemon rejects
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T82" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/svc-client-wrong-keyset.crt" "${PKI_DIR}/svc-client-wrong-keyset.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T82: Service client wrong keyset → daemon rejects"
+        else
+            fail "T82: Service client wrong keyset → daemon rejects" \
+                "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T83: Service client with extra fields → daemon rejects
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T83" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/svc-client-extra-fields.crt" "${PKI_DIR}/svc-client-extra-fields.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T83: Service client extra fields → daemon rejects"
+        else
+            fail "T83: Service client extra fields → daemon rejects" \
+                "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T84: CI client still works alongside service client config
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T84" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        if [ "${rc}" -eq 0 ] && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass"; then
+            pass "T84: CI client still works with dual policy config"
+        else
+            fail "T84: CI client still works with dual policy config" \
+                "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
+
+    # T85: Daemon startup log shows both CI and service policy
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T85" "daemon failed to start"
+    else
+        if grep -q "CI client OID enabled" "${DAEMON_LOG}" \
+            && grep -q "service client OID enabled (ns=pki-signing" "${DAEMON_LOG}"; then
+            pass "T85: Daemon startup log shows both CI and service policy"
+        else
+            fail "T85: Daemon startup log shows both CI and service policy" \
                 "log: $(cat "${DAEMON_LOG}")"
         fi
     fi
@@ -1141,6 +1311,7 @@ test_hostname
 test_data_integrity
 test_seccomp
 test_oid_policy_daemon
+test_service_client_policy_daemon
 test_concurrent_connections
 
 # ─── Summary ───

@@ -31,6 +31,12 @@ CLIENT_POLICY_WRONG_KEYSET='{"v":1,"iss":"https://token.actions.githubuserconten
 CLIENT_POLICY_EXTRA_FIELDS='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"cosign-v1","sneaky":"field"}'
 CLIENT_POLICY_INVALID_JSON='this is not json {{'
 
+# Service client policies (in-cluster services)
+SVC_CLIENT_POLICY_VALID='{"v":1,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1"}'
+SVC_CLIENT_POLICY_WRONG_NS='{"v":1,"service":"receipt-signer","namespace":"wrong-ns","keyset":"cosign-v1"}'
+SVC_CLIENT_POLICY_WRONG_KEYSET='{"v":1,"service":"receipt-signer","namespace":"pki-signing","keyset":"wrong-keyset"}'
+SVC_CLIENT_POLICY_EXTRA_FIELDS='{"v":1,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1","extra":"field"}'
+
 # Generate oversized payload (>16KB)
 CLIENT_POLICY_OVERSIZED='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","padding":"'
 CLIENT_POLICY_OVERSIZED+=$(printf '%0.sA' $(seq 1 17000))
@@ -150,6 +156,26 @@ gen_leaf "client-extra-fields" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
 gen_leaf "client-wrong-ca" "ci-runner" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/wrong-ca.crt" "${PKI_DIR}/wrong-ca.key" \
     "${CLIENT_POLICY_VALID}"
+
+# ─── 4b. Service client certs ───
+
+echo "=== Generating Service Client Certs ==="
+
+gen_leaf "svc-client-valid" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
+    "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
+    "${SVC_CLIENT_POLICY_VALID}"
+
+gen_leaf "svc-client-wrong-ns" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
+    "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
+    "${SVC_CLIENT_POLICY_WRONG_NS}"
+
+gen_leaf "svc-client-wrong-keyset" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
+    "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
+    "${SVC_CLIENT_POLICY_WRONG_KEYSET}"
+
+gen_leaf "svc-client-extra-fields" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
+    "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
+    "${SVC_CLIENT_POLICY_EXTRA_FIELDS}"
 
 # ─── 5. Summary ───
 

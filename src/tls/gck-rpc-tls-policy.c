@@ -374,6 +374,64 @@ done:
 	return r;
 }
 
+PolicyResult
+policy_validate_service_client(const char *json, int json_len,
+                               const char *expected_namespace,
+                               const char *expected_keyset)
+{
+	cJSON *root;
+	PolicyResult r;
+
+	if (!json || json_len <= 0) {
+		return POLICY_ERR_INVALID_JSON;
+	}
+
+	if (json_len > PKCS11_PROXY_POLICY_MAX_SIZE) {
+		return POLICY_ERR_OVERSIZED;
+	}
+
+	root = cJSON_ParseWithLength(json, json_len);
+	if (!root) {
+		warning(("policy: failed to parse service client JSON"));
+		return POLICY_ERR_INVALID_JSON;
+	}
+
+	/* Service client policy expected fields: v, service, namespace, keyset (4 fields) */
+	r = _check_version(root);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	r = _check_string_field(root, "service", NULL);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	r = _check_string_field(root, "namespace", expected_namespace);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	r = _check_string_field(root, "keyset", expected_keyset);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	if (_count_fields(root) != 4) {
+		static const char *const svc_fields[]
+		    = { "v", "service", "namespace", "keyset" };
+		_warn_extra_fields(root, svc_fields, 4, "service-client");
+		r = POLICY_ERR_EXTRA_FIELDS;
+		goto done;
+	}
+
+	r = POLICY_OK;
+
+done:
+	cJSON_Delete(root);
+	return r;
+}
+
 char *
 policy_pretty_json(const char *json, int json_len)
 {
