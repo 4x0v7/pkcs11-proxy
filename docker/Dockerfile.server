@@ -17,10 +17,12 @@ RUN apk add --no-cache \
     openssl-dev \
     libseccomp-dev
 
+ARG GIT_COMMIT_SHA=unknown
+
 WORKDIR /build/pkcs11-proxy
 COPY . .
 
-RUN cmake -DCMAKE_BUILD_TYPE=Release . && make
+RUN cmake -DCMAKE_BUILD_TYPE=Release -DGIT_COMMIT_SHA="${GIT_COMMIT_SHA}" . && make
 
 # ── Runtime stage ────────────────────────────────────────────
 FROM cgr.dev/chainguard/wolfi-base

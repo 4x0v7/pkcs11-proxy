@@ -8,6 +8,19 @@ project (pkcs11 C)
 
 set(VERSION "1.0.0")
 
+# Inject git commit SHA at build time (overridable via -DGIT_COMMIT_SHA=...)
+if(NOT DEFINED GIT_COMMIT_SHA)
+  execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_SHA
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+endif()
+if(NOT GIT_COMMIT_SHA)
+  set(GIT_COMMIT_SHA "unknown")
+endif()
+
 set(PKCS11_PROXY_SRCS
     src/proxy/gck-rpc-module.c
     src/common/gck-rpc-message.c
@@ -63,6 +76,7 @@ if (WIN32)
 endif()
 
 add_executable (pkcs11-daemon ${GUI_TYPE} ${PKCS11_DAEMON_SRCS})
+target_compile_definitions(pkcs11-daemon PRIVATE GIT_COMMIT_SHA="${GIT_COMMIT_SHA}")
 
 set_target_properties(pkcs11-proxy PROPERTIES VERSION 0.1 SOVERSION 0)
 

@@ -281,7 +281,7 @@ main(int argc, char *argv[])
 
 	openlog("pkcs11-proxy", LOG_CONS | LOG_PID, LOG_DAEMON);
 
-	fprintf(stderr, "pkcs11-proxy starting\n");
+	fprintf(stderr, "pkcs11-proxy starting (commit %s)\n", GIT_COMMIT_SHA);
 
 	/* Load the library */
 	module = dlopen(argv[1], RTLD_NOW);
