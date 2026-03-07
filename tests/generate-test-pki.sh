@@ -21,24 +21,24 @@ mkdir -p "${PKI_DIR}"
 
 # ─── Policy JSON payloads ───
 
-SERVER_POLICY_VALID='{"v":1,"service":"pkcs11-proxy","namespace":"sigstore","keyset":"cosign-v1"}'
-SERVER_POLICY_WRONG_SVC='{"v":1,"service":"wrong-service","namespace":"sigstore","keyset":"cosign-v1"}'
-SERVER_POLICY_WRONG_NS='{"v":1,"service":"pkcs11-proxy","namespace":"wrong-ns","keyset":"cosign-v1"}'
+SERVER_POLICY_VALID='{"v":2,"service":"pkcs11-proxy","namespace":"sigstore","keyset":"cosign-v1"}'
+SERVER_POLICY_WRONG_SVC='{"v":2,"service":"wrong-service","namespace":"sigstore","keyset":"cosign-v1"}'
+SERVER_POLICY_WRONG_NS='{"v":2,"service":"pkcs11-proxy","namespace":"wrong-ns","keyset":"cosign-v1"}'
 
-CLIENT_POLICY_VALID='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
-CLIENT_POLICY_WRONG_REPO='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"evil/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
-CLIENT_POLICY_WRONG_KEYSET='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"wrong-keyset"}'
-CLIENT_POLICY_EXTRA_FIELDS='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"cosign-v1","sneaky":"field"}'
+CLIENT_POLICY_VALID='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
+CLIENT_POLICY_WRONG_REPO='{"v":2,"sub":"repo:evil/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"evil/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
+CLIENT_POLICY_WRONG_KEYSET='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"wrong-keyset"}'
+CLIENT_POLICY_EXTRA_FIELDS='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1","sneaky":"field"}'
 CLIENT_POLICY_INVALID_JSON='this is not json {{'
 
 # Service client policies (in-cluster services)
-SVC_CLIENT_POLICY_VALID='{"v":1,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1"}'
-SVC_CLIENT_POLICY_WRONG_NS='{"v":1,"service":"receipt-signer","namespace":"wrong-ns","keyset":"cosign-v1"}'
-SVC_CLIENT_POLICY_WRONG_KEYSET='{"v":1,"service":"receipt-signer","namespace":"pki-signing","keyset":"wrong-keyset"}'
-SVC_CLIENT_POLICY_EXTRA_FIELDS='{"v":1,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1","extra":"field"}'
+SVC_CLIENT_POLICY_VALID='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1"}'
+SVC_CLIENT_POLICY_WRONG_NS='{"v":2,"service":"receipt-signer","namespace":"wrong-ns","keyset":"cosign-v1"}'
+SVC_CLIENT_POLICY_WRONG_KEYSET='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"wrong-keyset"}'
+SVC_CLIENT_POLICY_EXTRA_FIELDS='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1","extra":"field"}'
 
 # Generate oversized payload (>16KB)
-CLIENT_POLICY_OVERSIZED='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","padding":"'
+CLIENT_POLICY_OVERSIZED='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","padding":"'
 CLIENT_POLICY_OVERSIZED+=$(printf '%0.sA' $(seq 1 17000))
 CLIENT_POLICY_OVERSIZED+='"}'
 

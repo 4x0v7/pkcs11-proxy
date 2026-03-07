@@ -179,7 +179,7 @@ _check_string_field(const cJSON *root, const char *field, const char *expected)
 	return POLICY_OK;
 }
 
-/* Helper: check the version field (must be number == 1) */
+/* Helper: check the version field (must be number == 2) */
 static PolicyResult
 _check_version(const cJSON *root)
 {
@@ -188,7 +188,7 @@ _check_version(const cJSON *root)
 		warning(("policy: missing or non-numeric 'v' field"));
 		return POLICY_ERR_MISSING_FIELD;
 	}
-	if (item->valueint != 1) {
+	if (item->valueint != 2) {
 		warning(("policy: unsupported version %d", item->valueint));
 		return POLICY_ERR_WRONG_VALUE;
 	}
@@ -323,8 +323,13 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 		return POLICY_ERR_INVALID_JSON;
 	}
 
-	/* Client policy expected fields: v, iss, repo, workflow, ref, aud, keyset (7 fields) */
+	/* Client policy expected fields (v2): v, sub, iss, repo, workflow, ref, sha, runner, aud, keyset (10 fields) */
 	r = _check_version(root);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	r = _check_string_field(root, "sub", NULL);
 	if (r != POLICY_OK) {
 		goto done;
 	}
@@ -349,6 +354,16 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 		goto done;
 	}
 
+	r = _check_string_field(root, "sha", NULL);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	r = _check_string_field(root, "runner", NULL);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
 	r = _check_string_field(root, "aud", NULL);
 	if (r != POLICY_OK) {
 		goto done;
@@ -359,10 +374,10 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 		goto done;
 	}
 
-	if (_count_fields(root) != 7) {
+	if (_count_fields(root) != 10) {
 		static const char *const client_fields[]
-		    = { "v", "iss", "repo", "workflow", "ref", "aud", "keyset" };
-		_warn_extra_fields(root, client_fields, 7, "client");
+		    = { "v", "sub", "iss", "repo", "workflow", "ref", "sha", "runner", "aud", "keyset" };
+		_warn_extra_fields(root, client_fields, 10, "client");
 		r = POLICY_ERR_EXTRA_FIELDS;
 		goto done;
 	}
