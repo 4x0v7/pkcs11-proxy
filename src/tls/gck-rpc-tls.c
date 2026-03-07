@@ -274,7 +274,11 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			}
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected client: %s", policy_result_str(pr)));
+				char *pretty = policy_pretty_json(json, json_len);
+				warning(("OID policy rejected client: %s\nReceived:\n%s",
+				         policy_result_str(pr),
+				         pretty ? pretty : json));
+				free(pretty);
 				free(json);
 				return 0;
 			}
@@ -317,7 +321,11 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			                            policy_namespace, policy_keyset);
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected server: %s", policy_result_str(pr)));
+				char *pretty = policy_pretty_json(json, json_len);
+				warning(("OID policy rejected server: %s\nReceived:\n%s",
+				         policy_result_str(pr),
+				         pretty ? pretty : json));
+				free(pretty);
 				free(json);
 				return 0;
 			}
@@ -471,7 +479,11 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			}
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected client: %s", policy_result_str(pr)));
+				char *pretty = policy_pretty_json(json, json_len);
+				warning(("OID policy rejected client: %s\nReceived:\n%s",
+				         policy_result_str(pr),
+				         pretty ? pretty : json));
+				free(pretty);
 				free(json);
 				SSL_free(ssl);
 				return 0;
@@ -516,7 +528,11 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			                            policy_namespace, policy_keyset);
 
 			if (pr != POLICY_OK) {
-				warning(("OID policy rejected server: %s", policy_result_str(pr)));
+				char *pretty = policy_pretty_json(json, json_len);
+				warning(("OID policy rejected server: %s\nReceived:\n%s",
+				         policy_result_str(pr),
+				         pretty ? pretty : json));
+				free(pretty);
 				free(json);
 				SSL_free(ssl);
 				return 0;
