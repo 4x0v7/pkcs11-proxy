@@ -15,9 +15,9 @@ TPL_DIR="${BUILD_DIR}/tests/templates"
 
 echo "=== Integration test PKI generation ==="
 
-SERVER_POLICY='{"v":1,"service":"pkcs11-proxy","namespace":"sigstore","keyset":"cosign-v1"}'
-CLIENT_POLICY_VALID='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
-CLIENT_POLICY_WRONG='{"v":1,"iss":"https://token.actions.githubusercontent.com","repo":"evil/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
+SERVER_POLICY='{"v":2,"service":"pkcs11-proxy","namespace":"sigstore","keyset":"cosign-v1"}'
+CLIENT_POLICY_VALID='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
+CLIENT_POLICY_WRONG='{"v":2,"sub":"repo:evil/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"evil/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
 
 # Helper: create a leaf cert with OID policy using the test suite's templates.
 # Usage: gen_leaf <name> <cn> <template> <ca_cert> <ca_key> [policy_json] [extra_args...]
