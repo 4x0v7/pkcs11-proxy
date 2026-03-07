@@ -14,11 +14,13 @@ RUN apk add --no-cache \
     procps \
     step
 
+ARG GIT_COMMIT_SHA=unknown
+
 WORKDIR /build/pkcs11-proxy
 COPY . .
 
 # Build pkcs11-proxy
-RUN cmake . && make
+RUN cmake -DGIT_COMMIT_SHA="${GIT_COMMIT_SHA}" . && make
 
 # Build test helpers (linked with policy module + cJSON)
 RUN gcc -o tests/test-tls-server tests/test-tls-server.c \
@@ -41,6 +43,7 @@ RUN gcc -o pkcs11-daemon-seccomp \
         src/tls/gck-rpc-tls-policy.c src/seccomp/syscall-reporter.c \
         ext/cjson/cJSON.c \
         -D_GNU_SOURCE -DSECCOMP -DDEBUG_SECCOMP \
+        -DGIT_COMMIT_SHA='"${GIT_COMMIT_SHA}"' \
         -Iinclude -I. -Iext -Ipkcs11 \
         -ldl -lpthread -lssl -lcrypto -lseccomp -Wall -Wextra
 

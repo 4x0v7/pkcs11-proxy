@@ -1,6 +1,6 @@
 {
   "name": "pkcs11-proxy",
-  "engineVersion": "v0.20.1",
+  "engineVersion": "v0.20.0",
   "sdk": {
     "source": "python"
   },
