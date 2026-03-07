@@ -1171,6 +1171,36 @@ test_key_label_logging() {
         fi
     fi
     stop_daemon
+
+    # T91: Multiple consecutive sign+verify on same session (regression:
+    #      C_GetAttributeValue between C_SignInit and C_Sign caused
+    #      CKR_DEVICE_ERROR on SoftHSM)
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T91" "daemon failed to start"
+    else
+        PKCS11_OUTPUT=$(
+            PKCS11_PROXY_SOCKET="tls://127.0.0.1:${DAEMON_PORT}" \
+            PKCS11_PROXY_TLS_CERT="${PKI_DIR}/client-valid.crt" \
+            PKCS11_PROXY_TLS_KEY="${PKI_DIR}/client-valid.key" \
+            PKCS11_PROXY_TLS_CA="${PKI_DIR}/root-ca.crt" \
+            PKCS11_PROXY_TLS_SERVER_NAME="localhost" \
+            PKCS11_TEST_SIGN_ITERATIONS=10 \
+            timeout 10 "${TEST_PKCS11_TOOL}" "${PKCS11_PROXY_LIB}" 2>/dev/null
+        )
+        local rc=$?
+        if [ "${rc}" -eq 0 ] \
+            && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass" \
+            && echo "${PKCS11_OUTPUT}" | grep -q "ITERATIONS=10"; then
+            pass "T91: 10 consecutive sign+verify on same session"
+        else
+            fail "T91: 10 consecutive sign+verify on same session" \
+                "exit=${rc} output=${PKCS11_OUTPUT}"
+        fi
+    fi
+    stop_daemon
 }
 
 # ═══════════════════════════════════════════

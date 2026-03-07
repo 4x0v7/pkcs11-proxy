@@ -26,6 +26,7 @@
 
 #define TEST_PIN_DEFAULT "1234"
 #define TEST_DATA "pkcs11-proxy integration test payload"
+#define DEFAULT_SIGN_ITERATIONS 1
 
 static void print_hex(const char *label, CK_BYTE *data, CK_ULONG len)
 {
@@ -185,39 +186,47 @@ int main(int argc, char *argv[])
 	{
 		CK_MECHANISM sign_mech = { CKM_ECDSA, NULL, 0 };
 		CK_BYTE signature[128];
-		CK_ULONG sig_len = sizeof(signature);
+		CK_ULONG sig_len;
 		CK_BYTE data[] = TEST_DATA;
 		CK_ULONG data_len = sizeof(data) - 1;
 
-		/* Sign */
-		rv = funcs->C_SignInit(session, &sign_mech, priv_key);
-		if (rv != CKR_OK) {
-			fprintf(stderr, "C_SignInit failed: 0x%lx\n", rv);
-			goto destroy_keys;
-		}
+		const char *iter_env = getenv("PKCS11_TEST_SIGN_ITERATIONS");
+		int sign_iterations = iter_env ? atoi(iter_env) : DEFAULT_SIGN_ITERATIONS;
+		if (sign_iterations < 1)
+			sign_iterations = 1;
 
-		rv = funcs->C_Sign(session, data, data_len, signature, &sig_len);
-		if (rv != CKR_OK) {
-			fprintf(stderr, "C_Sign failed: 0x%lx\n", rv);
-			goto destroy_keys;
+		for (int iter = 0; iter < sign_iterations; iter++) {
+			sig_len = sizeof(signature);
+
+			/* Sign */
+			rv = funcs->C_SignInit(session, &sign_mech, priv_key);
+			if (rv != CKR_OK) {
+				fprintf(stderr, "C_SignInit failed (iter %d): 0x%lx\n", iter, rv);
+				goto destroy_keys;
+			}
+
+			rv = funcs->C_Sign(session, data, data_len, signature, &sig_len);
+			if (rv != CKR_OK) {
+				fprintf(stderr, "C_Sign failed (iter %d): 0x%lx\n", iter, rv);
+				goto destroy_keys;
+			}
+
+			/* Verify */
+			rv = funcs->C_VerifyInit(session, &sign_mech, pub_key);
+			if (rv != CKR_OK) {
+				fprintf(stderr, "C_VerifyInit failed (iter %d): 0x%lx\n", iter, rv);
+				goto destroy_keys;
+			}
+
+			rv = funcs->C_Verify(session, data, data_len, signature, sig_len);
+			if (rv != CKR_OK) {
+				fprintf(stderr, "C_Verify failed (iter %d): 0x%lx\n", iter, rv);
+				goto destroy_keys;
+			}
 		}
 
 		print_hex("SIGNATURE", signature, sig_len);
-		printf("SIGN=ok SIG_LEN=%lu\n", sig_len);
-
-		/* Verify */
-		rv = funcs->C_VerifyInit(session, &sign_mech, pub_key);
-		if (rv != CKR_OK) {
-			fprintf(stderr, "C_VerifyInit failed: 0x%lx\n", rv);
-			goto destroy_keys;
-		}
-
-		rv = funcs->C_Verify(session, data, data_len, signature, sig_len);
-		if (rv != CKR_OK) {
-			fprintf(stderr, "C_Verify failed: 0x%lx\n", rv);
-			goto destroy_keys;
-		}
-
+		printf("SIGN=ok SIG_LEN=%lu ITERATIONS=%d\n", sig_len, sign_iterations);
 		printf("VERIFY=ok\n");
 
 		/* Verify with tampered data should fail */

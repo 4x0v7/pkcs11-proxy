@@ -1657,10 +1657,11 @@ rpc_C_SignInit(CallState *cs)
 	IN_ULONG(session);
 	IN_MECHANISM(mechanism);
 	IN_ULONG(key);
-	PROCESS_CALL((session, &mechanism, key));
-	if (_ret == CKR_OK) {
+	/* Log key label BEFORE C_SignInit so we don't disturb the active
+	 * signing operation state (SoftHSM returns CKR_DEVICE_ERROR if
+	 * C_GetAttributeValue is called between C_SignInit and C_Sign). */
+	{
 		CK_ATTRIBUTE label_attr = { CKA_LABEL, NULL, 0 };
-		/* Query label length first */
 		if (pkcs11_module->C_GetAttributeValue(session, key, &label_attr, 1) == CKR_OK
 		    && label_attr.ulValueLen > 0
 		    && label_attr.ulValueLen != (CK_ULONG)-1) {
@@ -1677,6 +1678,7 @@ rpc_C_SignInit(CallState *cs)
 			}
 		}
 	}
+	PROCESS_CALL((session, &mechanism, key));
 	END_CALL;
 }
 
