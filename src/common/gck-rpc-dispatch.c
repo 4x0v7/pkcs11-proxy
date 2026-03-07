@@ -1658,6 +1658,25 @@ rpc_C_SignInit(CallState *cs)
 	IN_MECHANISM(mechanism);
 	IN_ULONG(key);
 	PROCESS_CALL((session, &mechanism, key));
+	if (_ret == CKR_OK) {
+		CK_ATTRIBUTE label_attr = { CKA_LABEL, NULL, 0 };
+		/* Query label length first */
+		if (pkcs11_module->C_GetAttributeValue(session, key, &label_attr, 1) == CKR_OK
+		    && label_attr.ulValueLen > 0
+		    && label_attr.ulValueLen != (CK_ULONG)-1) {
+			char label_buf[256];
+			CK_ULONG len = label_attr.ulValueLen;
+			if (len >= sizeof(label_buf))
+				len = sizeof(label_buf) - 1;
+			label_attr.pValue = label_buf;
+			label_attr.ulValueLen = len;
+			if (pkcs11_module->C_GetAttributeValue(session, key, &label_attr, 1)
+			    == CKR_OK) {
+				label_buf[len] = '\0';
+				gck_rpc_log("signing with key \"%s\"", label_buf);
+			}
+		}
+	}
 	END_CALL;
 }
 

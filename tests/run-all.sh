@@ -1143,6 +1143,37 @@ test_service_client_policy_daemon() {
 }
 
 # ═══════════════════════════════════════════
+# KEY LABEL LOGGING (T90)
+# ═══════════════════════════════════════════
+
+test_key_label_logging() {
+    log_header "Key Label Logging"
+
+    # T90: Daemon logs key label on C_SignInit
+    start_daemon \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt"
+    if [ $? -ne 0 ]; then
+        fail "T90" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/client-valid.crt" "${PKI_DIR}/client-valid.key"
+        local rc=$?
+        sleep 0.2
+        if [ "${rc}" -eq 0 ] \
+            && echo "${PKCS11_OUTPUT}" | grep -q "CRYPTO=pass" \
+            && grep -q 'signing with key "test-priv"' "${DAEMON_LOG}"; then
+            pass "T90: Daemon logs key label on signing operation"
+        else
+            fail "T90: Daemon logs key label on signing operation" \
+                "exit=${rc} log: $(cat "${DAEMON_LOG}")"
+        fi
+    fi
+    stop_daemon
+}
+
+# ═══════════════════════════════════════════
 # CONCURRENT CONNECTIONS (T70-T73)
 # Regression tests for the shared-TLS-state
 # race condition: a health probe (plain TCP
@@ -1312,6 +1343,7 @@ test_data_integrity
 test_seccomp
 test_oid_policy_daemon
 test_service_client_policy_daemon
+test_key_label_logging
 test_concurrent_connections
 
 # ─── Summary ───
