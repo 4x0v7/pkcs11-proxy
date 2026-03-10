@@ -34,9 +34,26 @@
 #define DEBUG_OUTPUT 0
 #endif
 
+static int
+    _policy_warnings_suppressed; /* NOLINT(cppcoreguidelines-avoid-non-const-global-variables) */
+
+void
+policy_suppress_warnings(void)
+{
+	_policy_warnings_suppressed = 1;
+}
+
+void
+policy_restore_warnings(void)
+{
+	_policy_warnings_suppressed = 0;
+}
+
 static void
 _policy_warn(const char *fmt, ...)
 {
+	if (_policy_warnings_suppressed)
+		return;
 	va_list ap;
 	va_start(ap, fmt);
 	(void)fprintf(stderr, "policy: ");
@@ -168,12 +185,11 @@ _check_string_field(const cJSON *root, const char *field, const char *expected)
 {
 	const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, field);
 	if (!item || !cJSON_IsString(item)) {
-		warning(("policy: missing or non-string field '%s'", field));
+		warning(("missing or non-string field '%s'", field));
 		return POLICY_ERR_MISSING_FIELD;
 	}
 	if (expected && strcmp(item->valuestring, expected) != 0) {
-		warning(("policy: field '%s' = '%s', expected '%s'", field, item->valuestring,
-		         expected));
+		warning(("field '%s' = '%s', expected '%s'", field, item->valuestring, expected));
 		return POLICY_ERR_WRONG_VALUE;
 	}
 	return POLICY_OK;
@@ -185,11 +201,11 @@ _check_version(const cJSON *root)
 {
 	const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "v");
 	if (!item || !cJSON_IsNumber(item)) {
-		warning(("policy: missing or non-numeric 'v' field"));
+		warning(("missing or non-numeric 'v' field"));
 		return POLICY_ERR_MISSING_FIELD;
 	}
 	if (item->valueint != 2) {
-		warning(("policy: unsupported version %d", item->valueint));
+		warning(("unsupported version %d", item->valueint));
 		return POLICY_ERR_WRONG_VALUE;
 	}
 	return POLICY_OK;
@@ -262,7 +278,7 @@ policy_validate_server(const char *json, int json_len, const char *expected_serv
 
 	root = cJSON_ParseWithLength(json, json_len);
 	if (!root) {
-		warning(("policy: failed to parse server JSON"));
+		warning(("failed to parse server JSON"));
 		return POLICY_ERR_INVALID_JSON;
 	}
 
@@ -324,7 +340,7 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 
 	root = cJSON_ParseWithLength(json, json_len);
 	if (!root) {
-		warning(("policy: failed to parse client JSON"));
+		warning(("failed to parse client JSON"));
 		return POLICY_ERR_INVALID_JSON;
 	}
 
@@ -412,7 +428,7 @@ policy_validate_service_client(const char *json, int json_len, const char *expec
 
 	root = cJSON_ParseWithLength(json, json_len);
 	if (!root) {
-		warning(("policy: failed to parse service client JSON"));
+		warning(("failed to parse service client JSON"));
 		return POLICY_ERR_INVALID_JSON;
 	}
 

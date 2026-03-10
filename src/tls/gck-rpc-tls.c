@@ -251,14 +251,17 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 				return 0;
 			}
 
-			/* Try CI client policy first (v2: v, sub, iss, repo, workflow, ref, sha, runner, aud, keyset) */
+			/* Try CI client policy first; suppress warnings during this
+			 * attempt so failed first-try paths don't emit noise. */
 			pr = POLICY_ERR_MISSING_FIELD;
 			if (policy_repo && policy_repo[0]) {
+				policy_suppress_warnings();
 				pr = policy_validate_client(json, json_len, policy_repo,
 				                            policy_keyset);
+				policy_restore_warnings();
 			}
 
-			/* Fall back to service client policy (v, service, namespace, keyset) */
+			/* Fall back to service client policy (v, service, namespace, keyset, purpose) */
 			if (pr != POLICY_OK && policy_svc_ns && policy_svc_ns[0]) {
 				pr = policy_validate_service_client(json, json_len, policy_svc_ns,
 				                                    policy_keyset);
@@ -455,14 +458,17 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 				return 0;
 			}
 
-			/* Try CI client policy first (v2: v, sub, iss, repo, workflow, ref, sha, runner, aud, keyset) */
+			/* Try CI client policy first; suppress warnings during this
+			 * attempt so failed first-try paths don't emit noise. */
 			pr = POLICY_ERR_MISSING_FIELD;
 			if (policy_repo && policy_repo[0]) {
+				policy_suppress_warnings();
 				pr = policy_validate_client(json, json_len, policy_repo,
 				                            policy_keyset);
+				policy_restore_warnings();
 			}
 
-			/* Fall back to service client policy (v, service, namespace, keyset) */
+			/* Fall back to service client policy (v, service, namespace, keyset, purpose) */
 			if (pr != POLICY_OK && policy_svc_ns && policy_svc_ns[0]) {
 				pr = policy_validate_service_client(json, json_len, policy_svc_ns,
 				                                    policy_keyset);

@@ -66,6 +66,12 @@ PolicyResult policy_validate_service_client(const char *json, int json_len,
                                             const char *expected_namespace,
                                             const char *expected_keyset);
 
+/* Suppress/restore internal policy validation warnings.
+ * Use around fallthrough attempts so failed first-try paths don't emit noise.
+ */
+void policy_suppress_warnings(void);
+void policy_restore_warnings(void);
+
 /* Return a human-readable string for a PolicyResult. */
 const char *policy_result_str(PolicyResult r);
 
