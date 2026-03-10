@@ -1011,7 +1011,7 @@ test_oid_policy_daemon() {
 # ═══════════════════════════════════════════
 # SERVICE CLIENT OID POLICY via Daemon (T80-T85)
 # Tests the service client policy path
-# ({v, service, namespace, keyset}) through
+# ({v, service, namespace, keyset, purpose}) through
 # the full daemon, alongside CI client policy.
 # ═══════════════════════════════════════════
 
@@ -1097,6 +1097,27 @@ test_service_client_policy_daemon() {
             pass "T83: Service client extra fields → daemon rejects"
         else
             fail "T83: Service client extra fields → daemon rejects" \
+                "expected failure but got rc=0"
+        fi
+    fi
+    stop_daemon
+
+    # T83b: Service client missing required purpose field → daemon rejects
+    start_daemon_with_dual_policy \
+        "${PKI_DIR}/server-valid.crt" "${PKI_DIR}/server-valid.key" \
+        "${PKI_DIR}/root-ca.crt" \
+        "org/repo" "cosign-v1" "pki-signing"
+    if [ $? -ne 0 ]; then
+        fail "T83b" "daemon failed to start"
+    else
+        run_pkcs11_tool \
+            "${PKI_DIR}/root-ca.crt" \
+            "${PKI_DIR}/svc-client-no-purpose.crt" "${PKI_DIR}/svc-client-no-purpose.key"
+        local rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            pass "T83b: Service client missing purpose → daemon rejects"
+        else
+            fail "T83b: Service client missing purpose → daemon rejects" \
                 "expected failure but got rc=0"
         fi
     fi

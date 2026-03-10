@@ -266,7 +266,7 @@ policy_validate_server(const char *json, int json_len, const char *expected_serv
 		return POLICY_ERR_INVALID_JSON;
 	}
 
-	/* Server policy expected fields: v, service, namespace, keyset (4 fields) */
+	/* Server policy required fields: v, service, namespace, keyset, purpose */
 	r = _check_version(root);
 	if (r != POLICY_OK) {
 		goto done;
@@ -287,10 +287,15 @@ policy_validate_server(const char *json, int json_len, const char *expected_serv
 		goto done;
 	}
 
-	if (_count_fields(root) != 4) {
+	r = _check_string_field(root, "purpose", NULL);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	if (_count_fields(root) != 5) {
 		static const char *const server_fields[]
-		    = { "v", "service", "namespace", "keyset" };
-		_warn_extra_fields(root, server_fields, 4, "server");
+		    = { "v", "service", "namespace", "keyset", "purpose" };
+		_warn_extra_fields(root, server_fields, 5, "server");
 		r = POLICY_ERR_EXTRA_FIELDS;
 		goto done;
 	}
@@ -376,7 +381,8 @@ policy_validate_client(const char *json, int json_len, const char *expected_repo
 
 	if (_count_fields(root) != 10) {
 		static const char *const client_fields[]
-		    = { "v", "sub", "iss", "repo", "workflow", "ref", "sha", "runner", "aud", "keyset" };
+		    = { "v",   "sub", "iss",    "repo", "workflow",
+			"ref", "sha", "runner", "aud",  "keyset" };
 		_warn_extra_fields(root, client_fields, 10, "client");
 		r = POLICY_ERR_EXTRA_FIELDS;
 		goto done;
@@ -390,8 +396,7 @@ done:
 }
 
 PolicyResult
-policy_validate_service_client(const char *json, int json_len,
-                               const char *expected_namespace,
+policy_validate_service_client(const char *json, int json_len, const char *expected_namespace,
                                const char *expected_keyset)
 {
 	cJSON *root;
@@ -411,7 +416,7 @@ policy_validate_service_client(const char *json, int json_len,
 		return POLICY_ERR_INVALID_JSON;
 	}
 
-	/* Service client policy expected fields: v, service, namespace, keyset (4 fields) */
+	/* Service client policy required fields: v, service, namespace, keyset, purpose */
 	r = _check_version(root);
 	if (r != POLICY_OK) {
 		goto done;
@@ -432,10 +437,15 @@ policy_validate_service_client(const char *json, int json_len,
 		goto done;
 	}
 
-	if (_count_fields(root) != 4) {
+	r = _check_string_field(root, "purpose", NULL);
+	if (r != POLICY_OK) {
+		goto done;
+	}
+
+	if (_count_fields(root) != 5) {
 		static const char *const svc_fields[]
-		    = { "v", "service", "namespace", "keyset" };
-		_warn_extra_fields(root, svc_fields, 4, "service-client");
+		    = { "v", "service", "namespace", "keyset", "purpose" };
+		_warn_extra_fields(root, svc_fields, 5, "service-client");
 		r = POLICY_ERR_EXTRA_FIELDS;
 		goto done;
 	}

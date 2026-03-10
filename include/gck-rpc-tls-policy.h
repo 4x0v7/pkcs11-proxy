@@ -45,7 +45,7 @@ typedef enum {
 char *policy_extract_json(X509 *cert, int *out_len);
 
 /* Validate a server policy JSON against expected values.
- * Expected fields: v, service, namespace, keyset
+ * Required fields: v, service, namespace, keyset, purpose
  * Returns POLICY_OK on success.
  */
 PolicyResult policy_validate_server(const char *json, int json_len, const char *expected_service,
@@ -59,7 +59,7 @@ PolicyResult policy_validate_client(const char *json, int json_len, const char *
                                     const char *expected_keyset);
 
 /* Validate an in-cluster service client policy JSON against expected values.
- * Expected fields: v, service, namespace, keyset
+ * Required fields: v, service, namespace, keyset, purpose
  * Returns POLICY_OK on success.
  */
 PolicyResult policy_validate_service_client(const char *json, int json_len,

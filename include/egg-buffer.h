@@ -65,7 +65,10 @@ typedef struct _EggBuffer {
 	EggBufferAllocator allocator;
 } EggBuffer;
 
-#define EGG_BUFFER_EMPTY { NULL, 0, 0, 0, NULL }
+#define EGG_BUFFER_EMPTY            \
+	{                           \
+		NULL, 0, 0, 0, NULL \
+	}
 
 int egg_buffer_init(EggBuffer *buffer, size_t reserve);
 

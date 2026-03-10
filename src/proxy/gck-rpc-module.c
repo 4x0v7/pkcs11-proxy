@@ -1144,11 +1144,10 @@ proto_read_sesssion_info(GckRpcMessage *msg, CK_SESSION_INFO_PTR info)
 	_ret = ret; \
 	goto _cleanup;
 
-#define END_CALL                     \
-	_cleanup:                    \
-	_ret = call_done(_cs, _ret); \
-	debug(("ret: 0x%x", _ret));  \
-	return _ret;                 \
+#define END_CALL                                \
+	_cleanup : _ret = call_done(_cs, _ret); \
+	debug(("ret: 0x%x", _ret));             \
+	return _ret;                            \
 	}
 
 #define IN_BYTE(val)                                      \

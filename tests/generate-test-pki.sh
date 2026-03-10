@@ -21,9 +21,9 @@ mkdir -p "${PKI_DIR}"
 
 # ─── Policy JSON payloads ───
 
-SERVER_POLICY_VALID='{"v":2,"service":"pkcs11-proxy","namespace":"sigstore","keyset":"cosign-v1"}'
-SERVER_POLICY_WRONG_SVC='{"v":2,"service":"wrong-service","namespace":"sigstore","keyset":"cosign-v1"}'
-SERVER_POLICY_WRONG_NS='{"v":2,"service":"pkcs11-proxy","namespace":"wrong-ns","keyset":"cosign-v1"}'
+SERVER_POLICY_VALID='{"v":2,"service":"pkcs11-proxy","namespace":"sigstore","keyset":"cosign-v1","purpose":"pkcs11-server"}'
+SERVER_POLICY_WRONG_SVC='{"v":2,"service":"wrong-service","namespace":"sigstore","keyset":"cosign-v1","purpose":"pkcs11-server"}'
+SERVER_POLICY_WRONG_NS='{"v":2,"service":"pkcs11-proxy","namespace":"wrong-ns","keyset":"cosign-v1","purpose":"pkcs11-server"}'
 
 CLIENT_POLICY_VALID='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
 CLIENT_POLICY_WRONG_REPO='{"v":2,"sub":"repo:evil/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"evil/repo","workflow":"build-and-sign.yml","ref":"refs/heads/main","sha":"abc123def456","runner":"github-hosted","aud":"pkcs11-proxy","keyset":"cosign-v1"}'
@@ -32,10 +32,11 @@ CLIENT_POLICY_EXTRA_FIELDS='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","is
 CLIENT_POLICY_INVALID_JSON='this is not json {{'
 
 # Service client policies (in-cluster services)
-SVC_CLIENT_POLICY_VALID='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1"}'
-SVC_CLIENT_POLICY_WRONG_NS='{"v":2,"service":"receipt-signer","namespace":"wrong-ns","keyset":"cosign-v1"}'
-SVC_CLIENT_POLICY_WRONG_KEYSET='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"wrong-keyset"}'
-SVC_CLIENT_POLICY_EXTRA_FIELDS='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1","extra":"field"}'
+SVC_CLIENT_POLICY_VALID='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1","purpose":"receipt-signing"}'
+SVC_CLIENT_POLICY_NO_PURPOSE='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1"}'
+SVC_CLIENT_POLICY_WRONG_NS='{"v":2,"service":"receipt-signer","namespace":"wrong-ns","keyset":"cosign-v1","purpose":"receipt-signing"}'
+SVC_CLIENT_POLICY_WRONG_KEYSET='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"wrong-keyset","purpose":"receipt-signing"}'
+SVC_CLIENT_POLICY_EXTRA_FIELDS='{"v":2,"service":"receipt-signer","namespace":"pki-signing","keyset":"cosign-v1","purpose":"receipt-signing","extra":"field"}'
 
 # Generate oversized payload (>16KB)
 CLIENT_POLICY_OVERSIZED='{"v":2,"sub":"repo:org/repo:ref:refs/heads/main","iss":"https://token.actions.githubusercontent.com","repo":"org/repo","padding":"'
@@ -172,6 +173,10 @@ gen_leaf "svc-client-wrong-ns" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
 gen_leaf "svc-client-wrong-keyset" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
     "${SVC_CLIENT_POLICY_WRONG_KEYSET}"
+
+gen_leaf "svc-client-no-purpose" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
+    "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \
+    "${SVC_CLIENT_POLICY_NO_PURPOSE}"
 
 gen_leaf "svc-client-extra-fields" "receipt-signer" "${TPL_DIR}/client-valid.tpl" \
     "${PKI_DIR}/root-ca.crt" "${PKI_DIR}/root-ca.key" \

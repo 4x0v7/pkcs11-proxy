@@ -254,7 +254,8 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			/* Try CI client policy first (v2: v, sub, iss, repo, workflow, ref, sha, runner, aud, keyset) */
 			pr = POLICY_ERR_MISSING_FIELD;
 			if (policy_repo && policy_repo[0]) {
-				pr = policy_validate_client(json, json_len, policy_repo, policy_keyset);
+				pr = policy_validate_client(json, json_len, policy_repo,
+				                            policy_keyset);
 			}
 
 			/* Fall back to service client policy (v, service, namespace, keyset) */
@@ -276,8 +277,7 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			if (pr != POLICY_OK) {
 				char *pretty = policy_pretty_json(json, json_len);
 				warning(("OID policy rejected client: %s\nReceived:\n%s",
-				         policy_result_str(pr),
-				         pretty ? pretty : json));
+				         policy_result_str(pr), pretty ? pretty : json));
 				free(pretty);
 				free(json);
 				return 0;
@@ -292,7 +292,7 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			}
 			free(json);
 		}
-	policy_done: ;
+	policy_done:;
 	} else {
 		/* Client-side: validate server cert OID policy */
 		const char *policy_service = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
@@ -323,8 +323,7 @@ gck_rpc_start_tls(GckRpcTlsState *state, int sock)
 			if (pr != POLICY_OK) {
 				char *pretty = policy_pretty_json(json, json_len);
 				warning(("OID policy rejected server: %s\nReceived:\n%s",
-				         policy_result_str(pr),
-				         pretty ? pretty : json));
+				         policy_result_str(pr), pretty ? pretty : json));
 				free(pretty);
 				free(json);
 				return 0;
@@ -459,7 +458,8 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			/* Try CI client policy first (v2: v, sub, iss, repo, workflow, ref, sha, runner, aud, keyset) */
 			pr = POLICY_ERR_MISSING_FIELD;
 			if (policy_repo && policy_repo[0]) {
-				pr = policy_validate_client(json, json_len, policy_repo, policy_keyset);
+				pr = policy_validate_client(json, json_len, policy_repo,
+				                            policy_keyset);
 			}
 
 			/* Fall back to service client policy (v, service, namespace, keyset) */
@@ -481,8 +481,7 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			if (pr != POLICY_OK) {
 				char *pretty = policy_pretty_json(json, json_len);
 				warning(("OID policy rejected client: %s\nReceived:\n%s",
-				         policy_result_str(pr),
-				         pretty ? pretty : json));
+				         policy_result_str(pr), pretty ? pretty : json));
 				free(pretty);
 				free(json);
 				SSL_free(ssl);
@@ -498,7 +497,7 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			}
 			free(json);
 		}
-	conn_policy_done: ;
+	conn_policy_done:;
 	} else {
 		const char *policy_service = getenv("PKCS11_PROXY_TLS_POLICY_SERVICE");
 		const char *policy_namespace = getenv("PKCS11_PROXY_TLS_POLICY_NAMESPACE");
@@ -530,8 +529,7 @@ gck_rpc_start_tls_conn(GckRpcTlsState *ctx, int sock, SSL **out_ssl, BIO **out_b
 			if (pr != POLICY_OK) {
 				char *pretty = policy_pretty_json(json, json_len);
 				warning(("OID policy rejected server: %s\nReceived:\n%s",
-				         policy_result_str(pr),
-				         pretty ? pretty : json));
+				         policy_result_str(pr), pretty ? pretty : json));
 				free(pretty);
 				free(json);
 				SSL_free(ssl);

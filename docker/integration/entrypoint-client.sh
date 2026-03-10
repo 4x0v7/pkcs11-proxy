@@ -59,9 +59,9 @@ run_test() {
 }
 
 echo ""
-echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║   Docker Compose Integration Tests            ║${NC}"
-echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║   Docker Compose Integration Tests   ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 echo ""
 
 # ─── I1: Valid client cert with correct OID → accepted ───

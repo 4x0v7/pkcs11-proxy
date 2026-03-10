@@ -347,15 +347,18 @@ main(int argc, char *argv[])
 			fprintf(stderr, "  tls:    TLS 1.3 server initialized (mTLS=%s)\n",
 			        mtls_env && strcmp(mtls_env, "true") == 0 ? "required" : "off");
 			if (policy_keyset && policy_keyset[0]
-			    && ((policy_repo && policy_repo[0]) || (policy_svc_ns && policy_svc_ns[0]))) {
+			    && ((policy_repo && policy_repo[0])
+			        || (policy_svc_ns && policy_svc_ns[0]))) {
 				if (policy_repo && policy_repo[0]) {
-					fprintf(stderr,
-					        "  policy: CI client OID enabled (repo=%s keyset=%s)\n",
-					        policy_repo, policy_keyset);
+					fprintf(
+					    stderr,
+					    "  policy: CI client OID enabled (repo=%s keyset=%s)\n",
+					    policy_repo, policy_keyset);
 				}
 				if (policy_svc_ns && policy_svc_ns[0]) {
 					fprintf(stderr,
-					        "  policy: service client OID enabled (ns=%s keyset=%s)\n",
+					        "  policy: service client OID enabled (ns=%s "
+					        "keyset=%s)\n",
 					        policy_svc_ns, policy_keyset);
 				}
 			} else {

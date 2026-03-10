@@ -763,10 +763,9 @@ proto_write_session_info(CallState *cs, CK_SESSION_INFO_PTR info)
 	assert(gck_rpc_message_is_verified(cs->req)); \
 	_ret = _func args
 
-#define END_CALL                    \
-	_cleanup:                   \
-	debug(("ret: 0x%x", _ret)); \
-	return _ret;                \
+#define END_CALL                               \
+	_cleanup : debug(("ret: 0x%x", _ret)); \
+	return _ret;                           \
 	}
 
 #define IN_BYTE(val)                                     \
@@ -1663,8 +1662,7 @@ rpc_C_SignInit(CallState *cs)
 	{
 		CK_ATTRIBUTE label_attr = { CKA_LABEL, NULL, 0 };
 		if (pkcs11_module->C_GetAttributeValue(session, key, &label_attr, 1) == CKR_OK
-		    && label_attr.ulValueLen > 0
-		    && label_attr.ulValueLen != (CK_ULONG)-1) {
+		    && label_attr.ulValueLen > 0 && label_attr.ulValueLen != (CK_ULONG)-1) {
 			char label_buf[256];
 			CK_ULONG len = label_attr.ulValueLen;
 			if (len >= sizeof(label_buf))
@@ -2474,8 +2472,8 @@ gck_rpc_layer_accept(GckRpcTlsState *tls)
 	}
 
 	ds->cs.sock = new_fd;
-	ds->cs.read = (int (*)(void *, unsigned char *, unsigned long))&read_all;
-	ds->cs.write = (int (*)(void *, unsigned char *, unsigned long))&write_all;
+	ds->cs.read = (int (*)(void *, unsigned char *, unsigned long)) & read_all;
+	ds->cs.write = (int (*)(void *, unsigned char *, unsigned long)) & write_all;
 	ds->cs.addr = addr;
 	ds->cs.addrlen = addrlen;
 	ds->cs.tls = tls;
@@ -2514,8 +2512,8 @@ gck_rpc_layer_inetd(CK_FUNCTION_LIST_PTR module)
 
 	memset(&cs, 0, sizeof(cs));
 	cs.sock = STDIN_FILENO;
-	cs.read = (int (*)(void *, unsigned char *, unsigned long))&_inetd_read;
-	cs.write = (int (*)(void *, unsigned char *, unsigned long))&_inetd_write;
+	cs.read = (int (*)(void *, unsigned char *, unsigned long)) & _inetd_read;
+	cs.write = (int (*)(void *, unsigned char *, unsigned long)) & _inetd_write;
 
 	pkcs11_module = module;
 
