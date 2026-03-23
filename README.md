@@ -165,18 +165,22 @@ Set these on the **daemon** to restrict which workloads can connect:
 |---|---|---|
 | `PKCS11_PROXY_TLS_POLICY_REPO` | Yes (to enable) | Authorized workload identifier (e.g. `"org/repo"`). This is the CI source repository that is permitted to access the signing keys. Matched against the `repo` field in the client cert's OID extension. |
 | `PKCS11_PROXY_TLS_POLICY_KEYSET` | Yes (to enable) | Logical key group name (e.g. `"cosign-v1"`). Allows the same daemon to serve multiple keysets while ensuring clients only access the keyset they were issued credentials for. Matched against the `keyset` field. |
+| `PKCS11_PROXY_TLS_POLICY_SERVICE_NS` | Optional | Expected namespace for in-cluster service clients (e.g. `"sigstore"`). When set alongside `PKCS11_PROXY_TLS_POLICY_KEYSET`, the daemon also accepts service-client certificates (same schema as the server policy: `v`, `service`, `namespace`, `keyset`, `purpose`). |
 
-**Both** must be set to activate server-side policy checking.
+`PKCS11_PROXY_TLS_POLICY_KEYSET` plus at least one of `PKCS11_PROXY_TLS_POLICY_REPO` or `PKCS11_PROXY_TLS_POLICY_SERVICE_NS` must be set to activate server-side policy checking. When both are set, CI client policy is tried first; if it does not match, service-client policy is tried as a fallback.
 
-The client certificate's OID extension (`1.7.4.4.6.3.3.4.4.8`) must contain a JSON object with **exactly** these 7 fields:
+The CI client certificate's OID extension (`1.7.4.4.6.3.3.4.4.8`) must contain a JSON object with **exactly** these 10 fields:
 
 ```json
 {
-  "v": 1,
+  "v": 2,
+  "sub": "repo:org/repo:ref:refs/heads/main",
   "iss": "https://token.actions.githubusercontent.com",
   "repo": "org/repo",
   "workflow": "build-and-sign.yml",
   "ref": "refs/heads/main",
+  "sha": "abc123def456...",
+  "runner": "ubuntu-latest",
   "aud": "pkcs11-proxy",
   "keyset": "cosign-v1"
 }
@@ -184,11 +188,14 @@ The client certificate's OID extension (`1.7.4.4.6.3.3.4.4.8`) must contain a JS
 
 | Field | Validation | Description |
 |---|---|---|
-| `v` | Must be `1` | Schema version. |
+| `v` | Must be `2` | Schema version. |
+| `sub` | Must be present (value not enforced) | OIDC subject claim. Composite identifier for the CI identity. Logged for audit, not enforced. |
 | `iss` | Must be present (value not enforced) | OIDC issuer URL. Identifies the identity provider (e.g. GitHub Actions OIDC). |
 | `repo` | **Must match** `PKCS11_PROXY_TLS_POLICY_REPO` | Source repository of the CI workload. This is the primary access control — only workflows from this repo can connect. |
 | `workflow` | Must be present (value not enforced) | CI workflow name. Logged for audit, not enforced. |
 | `ref` | Must be present (value not enforced) | Git ref (branch/tag). Logged for audit, not enforced. |
+| `sha` | Must be present (value not enforced) | Git commit SHA. Logged for audit, not enforced. |
+| `runner` | Must be present (value not enforced) | CI runner environment. Logged for audit, not enforced. |
 | `aud` | Must be present (value not enforced) | Audience claim. Logged for audit, not enforced. |
 | `keyset` | **Must match** `PKCS11_PROXY_TLS_POLICY_KEYSET` | Logical key group the client is authorized to use. |
 
@@ -206,23 +213,25 @@ Set these on the **client** to verify the daemon's identity via its OID policy e
 
 **All three** must be set to activate client-side policy checking.
 
-The server certificate's OID extension must contain a JSON object with **exactly** these 4 fields:
+The server certificate's OID extension must contain a JSON object with **exactly** these 5 fields:
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "service": "pkcs11-proxy",
   "namespace": "sigstore",
-  "keyset": "cosign-v1"
+  "keyset": "cosign-v1",
+  "purpose": "signing"
 }
 ```
 
 | Field | Validation | Description |
 |---|---|---|
-| `v` | Must be `1` | Schema version. |
+| `v` | Must be `2` | Schema version. |
 | `service` | **Must match** `PKCS11_PROXY_TLS_POLICY_SERVICE` | Service type identifier. |
 | `namespace` | **Must match** `PKCS11_PROXY_TLS_POLICY_NAMESPACE` | Deployment scope / tenant. |
 | `keyset` | **Must match** `PKCS11_PROXY_TLS_POLICY_KEYSET` | Logical key group served. |
+| `purpose` | Must be present (value not enforced) | Operational purpose of the service (e.g. `"signing"`). Logged for audit, not enforced. |
 
 ## OID Extension in Certificates
 

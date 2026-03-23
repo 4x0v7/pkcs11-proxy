@@ -52,7 +52,7 @@ PolicyResult policy_validate_server(const char *json, int json_len, const char *
                                     const char *expected_namespace, const char *expected_keyset);
 
 /* Validate a CI client policy JSON against expected values.
- * Expected fields: v, iss, repo, workflow, ref, aud, keyset
+ * Expected fields (v2): v, sub, iss, repo, workflow, ref, sha, runner, aud, keyset
  * Returns POLICY_OK on success.
  */
 PolicyResult policy_validate_client(const char *json, int json_len, const char *expected_repo,
