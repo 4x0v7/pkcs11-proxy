@@ -8,7 +8,7 @@ from dagger import Ignore, function, object_type
 # Exclude build artifacts from host uploads (replaces .daggerignore)
 SrcDir = Annotated[dagger.Directory, Ignore(["build"])]
 
-TRIVY_IMAGE = "aquasec/trivy:latest"
+WOLFI_IMAGE = "cgr.dev/chainguard/wolfi-base:latest"
 LINT_IMAGE = "ubuntu:24.04"
 LLVM_VERSION = "20"
 
@@ -28,6 +28,14 @@ class Pkcs11Proxy:
     def _build_server_image(self, src: dagger.Directory) -> dagger.Container:
         """Build the production server image from docker/Dockerfile.server."""
         return src.docker_build(dockerfile="docker/Dockerfile.server")
+
+    def _trivy_container(self) -> dagger.Container:
+        """Wolfi-based container with trivy installed via apk."""
+        return (
+            dagger.dag.container()
+            .from_(WOLFI_IMAGE)
+            .with_exec(["apk", "add", "--no-cache", "trivy"])
+        )
 
     @function(cache="never")
     async def test(self, src: SrcDir) -> str:
@@ -119,8 +127,7 @@ class Pkcs11Proxy:
         tarball = self._build_server_image(src).as_tarball()
 
         return await (
-            dagger.dag.container()
-            .from_(TRIVY_IMAGE)
+            self._trivy_container()
             .with_mounted_file("/image.tar", tarball)
             .with_exec(
                 [
@@ -301,8 +308,7 @@ class Pkcs11Proxy:
         tarball = self._build_server_image(src).as_tarball()
 
         return (
-            dagger.dag.container()
-            .from_(TRIVY_IMAGE)
+            self._trivy_container()
             .with_mounted_file("/image.tar", tarball)
             .with_exec(
                 [
@@ -317,4 +323,27 @@ class Pkcs11Proxy:
                 ]
             )
             .file("/report.json")
+        )
+
+    @function(cache="never")
+    async def trivy_sarif(self, src: SrcDir) -> dagger.File:
+        """Scan the production image and return a SARIF vulnerability report."""
+        tarball = self._build_server_image(src).as_tarball()
+
+        return (
+            self._trivy_container()
+            .with_mounted_file("/image.tar", tarball)
+            .with_exec(
+                [
+                    "trivy",
+                    "image",
+                    "--input",
+                    "/image.tar",
+                    "--format",
+                    "sarif",
+                    "--output",
+                    "/report.sarif",
+                ]
+            )
+            .file("/report.sarif")
         )

@@ -104,15 +104,14 @@ jobs:
           module: .dagger
           args: trivy-scan --src=.
 
-      - name: Build image for SARIF scan
-        run: docker build -f docker/Dockerfile.server -t pkcs11-proxy:scan .
-
-      - name: Run Trivy (SARIF report)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+      - name: Export Trivy SARIF report (Dagger)
+        uses: dagger/dagger-for-github@v8.4.1
+        if: always()
         with:
-          image-ref: 'pkcs11-proxy:scan'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          version: "0.20.3"
+          verb: call
+          module: .dagger
+          args: trivy-sarif --src=. export --path=trivy-results.sarif
 
       - name: Upload Trivy SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
@@ -120,13 +119,14 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Run Trivy (JSON report)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+      - name: Export Trivy JSON report (Dagger)
+        uses: dagger/dagger-for-github@v8.4.1
         if: always()
         with:
-          image-ref: 'pkcs11-proxy:scan'
-          format: 'json'
-          output: 'trivy-results.json'
+          version: "0.20.3"
+          verb: call
+          module: .dagger
+          args: trivy-report --src=. export --path=trivy-results.json
 
       - name: Upload Trivy JSON report
         uses: actions/upload-artifact@v4
